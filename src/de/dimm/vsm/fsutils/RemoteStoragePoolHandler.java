@@ -324,6 +324,9 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     {
         l("open_file_handle hno " + fseNode.getIdx());
         long handleNo = api.open_fh(poolWrapper, fseNode, b);
+        if (handleNo == -1)
+            throw new IOException("Cannot open file " + fseNode.getPath() );
+
         // STOR IN FSENODE
         fseNode.setFileHandle(handleNo);
 
@@ -335,6 +338,9 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     {
         l("open_file_handle hno " + fseNode.getIdx());
         long handleNo = api.open_stream(poolWrapper, fseNode, b);
+        if (handleNo == -1)
+            throw new IOException("Cannot open file " + fseNode.getPath() );
+        
         // STOR IN FSENODE
         fseNode.setFileHandle(handleNo);
 

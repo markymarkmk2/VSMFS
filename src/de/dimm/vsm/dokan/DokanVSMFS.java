@@ -109,38 +109,38 @@ public class DokanVSMFS implements DokanOperations, VSMFS
         System.out.println("WinVSMFS: " + msg);
     }
 
-    public static void test( )
-    {
-
-        DokanVSMFS d = new DokanVSMFS(null, null, null);
-
-        long start = System.currentTimeMillis();
-        int cnt = 0;
-        cnt = Dokan.testinit(d);
-        for (int i = 0; i < 100000; i++)
-        {
-            cnt = Dokan.teststring("blah");
-            if (i % 10000 == 0)
-            {
-                if (i == 0)
-                    continue;
-                
-                long now = System.currentTimeMillis();
-                long diff = now - start;
-                if (diff == 0)
-                    diff = 1;
-
-                int n = (int)((10000 * 1000) / diff);
-                System.out.println( n +"/s");
-                start = now;
-            }
-        }               
-    }
+//    public static void test( )
+//    {
+//
+//        DokanVSMFS d = new DokanVSMFS(null, null, null);
+//
+//        long start = System.currentTimeMillis();
+//        int cnt = 0;
+//        cnt = Dokan.testinit(d);
+//        for (int i = 0; i < 100000; i++)
+//        {
+//            cnt = Dokan.teststring("blah");
+//            if (i % 10000 == 0)
+//            {
+//                if (i == 0)
+//                    continue;
+//
+//                long now = System.currentTimeMillis();
+//                long diff = now - start;
+//                if (diff == 0)
+//                    diff = 1;
+//
+//                int n = (int)((10000 * 1000) / diff);
+//                System.out.println( n +"/s");
+//                start = now;
+//            }
+//        }
+//    }
 
     public DokanVSMFS( RemoteStoragePoolHandler api, String drive, Logger log )
     {
-        if (api == null)
-            test = true;
+//        if (api == null)
+//            test = true;
         this.remoteFSApi = api;
         this.drive = drive;
         this.log = log;

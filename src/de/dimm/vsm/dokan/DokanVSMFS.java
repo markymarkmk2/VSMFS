@@ -23,7 +23,6 @@ THE SOFTWARE.
  */
 package de.dimm.vsm.dokan;
 
-import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.net.interfaces.FileHandle;
 import de.dimm.vsm.Utilities.WinFileUtilities;
 import de.dimm.vsm.VSMFSLogger;
@@ -36,6 +35,7 @@ import de.dimm.vsm.fsutils.Utils;
 import de.dimm.vsm.fsutils.VSMFS;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.records.FileSystemElemNode;
+import java.io.File;
 import java.sql.SQLException;
 import net.decasdev.dokan.DokanOptions;
 ;
@@ -55,9 +55,7 @@ import static net.decasdev.dokan.WinError.ERROR_WRITE_FAULT;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 
 import net.decasdev.dokan.ByHandleFileInformation;
@@ -101,6 +99,7 @@ public class DokanVSMFS implements DokanOperations, VSMFS
     RemoteStoragePoolHandler remoteFSApi;
 
     HandleResolver handleResolver;
+    boolean test = false;
 
 
     private Logger log = VSMFSLogger.getLog();
@@ -110,16 +109,49 @@ public class DokanVSMFS implements DokanOperations, VSMFS
         System.out.println("WinVSMFS: " + msg);
     }
 
+    public static void test( )
+    {
+
+        DokanVSMFS d = new DokanVSMFS(null, null, null);
+
+        long start = System.currentTimeMillis();
+        int cnt = 0;
+        cnt = Dokan.testinit(d);
+        for (int i = 0; i < 100000; i++)
+        {
+            cnt = Dokan.teststring("blah");
+            if (i % 10000 == 0)
+            {
+                if (i == 0)
+                    continue;
+                
+                long now = System.currentTimeMillis();
+                long diff = now - start;
+                if (diff == 0)
+                    diff = 1;
+
+                int n = (int)((10000 * 1000) / diff);
+                System.out.println( n +"/s");
+                start = now;
+            }
+        }               
+    }
+
     public DokanVSMFS( RemoteStoragePoolHandler api, String drive, Logger log )
     {
+        if (api == null)
+            test = true;
         this.remoteFSApi = api;
         this.drive = drive;
         this.log = log;
 
         showVersions();
 
-        hook = new ShutdownHook( drive, false );
-        Runtime.getRuntime().addShutdownHook(hook);
+        if (!test)
+        {
+            hook = new ShutdownHook( drive, false );
+            Runtime.getRuntime().addShutdownHook(hook);
+        }
 
         handleResolver = new HandleResolver(log);
 
@@ -340,11 +372,6 @@ public class DokanVSMFS implements DokanOperations, VSMFS
         }
     }
 
-    @Override
-    public void onCleanup( String arg0, DokanFileInfo arg2 )
-            throws DokanOperationException
-    {
-    }
 
     @Override
     public void onCloseFile( String path, DokanFileInfo arg1 )
@@ -507,58 +534,114 @@ public class DokanVSMFS implements DokanOperations, VSMFS
 
         return bhfi;
     }
+    @Override
+    public void onCleanup( String arg0, DokanFileInfo arg2 )
+            throws DokanOperationException
+    {
 
-    HashMap<String,Win32FindData[]> dir_cache = new HashMap<String, Win32FindData[]>();
-    
+    }
+
+    //HashMap<String,Win32FindData[]> dir_cache = new HashMap<String, Win32FindData[]>();
+
+//    List<Win32FindData> wfdBuffer = new ArrayList<Win32FindData>();
+//
+//    Win32FindData[] cache_files = null;
 
     @Override
     public Win32FindData[] onFindFiles( String pathName, DokanFileInfo arg1 ) throws DokanOperationException
     {
+
+        if (test)
+        {
+            //List<Win32FindData> wfdBuffer = new ArrayList<Win32FindData>();
+
+            Win32FindData[] cache_files = null;
+            File[] dirlist = new File(".").listFiles();
+
+            /*if (cache_files != null)
+            {
+                for (int i = 0; i < cache_files.length; i++)
+                {
+                    Win32FindData win32FindData = cache_files[i];
+                    win32FindData.setData(0, 0, 0, 0, 0, 0, 0, null, null);
+                }
+            }*/
+            cache_files = new Win32FindData[dirlist.length];
+
+            for (int i = 0; i < cache_files.length; i++)
+            {
+//                 if (i >= wfdBuffer.size())
+//                {
+//                    wfdBuffer.add( new Win32FindData(0, 0, 0, 0, 0, 0, 0, null, null) );
+//                    System.out.println("WFDBuffersize: " + wfdBuffer.size());
+//                }
+//
+//                Win32FindData d = wfdBuffer.get(i);
+                File file = dirlist[i];
+                Win32FindData d = new Win32FindData(0, 0l, 0l, 0l, 0l, 0, 0,  file.getAbsolutePath(), Utils.toShortName(file.getAbsolutePath()));
+                cache_files[i] = d;
+
+            }
+            return cache_files;
+        }
+
         log("[onFindFiles] " + pathName  + " " + arg1.toString());
         FSENode f = null;
-
-
-        Win32FindData[] cache_files = null; //dir_cache.get(pathName);
-
-        if (cache_files != null)
-            return cache_files;
+        
+        
 
 
         try
         {
-            ArrayList<Win32FindData> files = new ArrayList<Win32FindData>();
+            //ArrayList<Win32FindData> files = new ArrayList<Win32FindData>();
             
             f =  handleResolver.get_fsenode_by_handleNo( arg1.handle );
 
             //f = resolveNode(pathName);
+            Win32FindData[] cache_files;
 
-            if (f != null)
+
+            if (f == null)
+            {
+                cache_files = new Win32FindData[0];
+            }
+            else
             {
                 List<RemoteFSElem> list = remoteFSApi.get_child_nodes( f.getNode() );
+
+                cache_files = new  Win32FindData[list.size()];
 
                 for (int i = 0; i < list.size(); i++)
                 {
                     RemoteFSElem cf = list.get(i);
 
-                    String lName = WinFileUtilities.sys_name_to_win_name( cf.getName() );
-                    String sName = Utils.toShortName(lName);
+                    final String lName = String.copyValueOf(WinFileUtilities.sys_name_to_win_name( cf.getName() ).toCharArray());
+                    final String sName = String.copyValueOf(Utils.toShortName(lName).toCharArray());
                     
                     int fileAttribute = FILE_ATTRIBUTE_NORMAL;
                     if (cf.isDirectory())
                         fileAttribute |= FILE_ATTRIBUTE_DIRECTORY;
 
+//                    if (i >= wfdBuffer.size())
+//                    {
+//                        wfdBuffer.add( new Win32FindData(0, 0, 0, 0, 0, 0, 0, null, null) );
+//                        System.out.println("WFDBuffersize: " + wfdBuffer.size());
+//                    }
+//
+//                    Win32FindData d = wfdBuffer.get(i);
                     Win32FindData d = new Win32FindData(fileAttribute,
                             FileTime.toWinFileTime( cf.getCtimeMs()),
                             FileTime.toWinFileTime( cf.getAtimeMs()),
                             FileTime.toWinFileTime( cf.getMtimeMs()),
                             cf.getDataSize(), 0, 0, lName, sName);
 
-                    files.add(d);
+                    cache_files[i] = d;
+//                    files.add(d);
                 }
             }
             //log("[onFindFiles] " + files);
 
-            cache_files = files.toArray(new Win32FindData[0]);
+  //          cache_files = files.toArray(new Win32FindData[0]);
             //dir_cache.put(pathName, cache_files);
             return cache_files;
         }

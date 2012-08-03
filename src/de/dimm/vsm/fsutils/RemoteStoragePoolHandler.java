@@ -92,6 +92,12 @@ class RemoteFileHandle implements FileHandle
     {
         return remoteFSApi.length(serverFhIdx);
     }
+
+    public boolean exists()
+    {
+        return remoteFSApi.length(serverFhIdx) >= 0;
+    }
+
 }
 
 /**

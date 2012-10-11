@@ -26,7 +26,12 @@ public class MountVSMFS
         // ODER sysctl -w vfs.generic.fuse4x.tunables.admin_group=80
         try
         {
-            String[] fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", };
+            String[] fuse_args  = { "-s", "-r", "-o", "volname=VSMFileSystem"};
+            if (OSValidator.isMac())
+            {
+                String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
+                fuse_args = _fuse_args;
+            }
 //            String[] fuse_args = { "-s", "-o", "allow_other" , "-o", "volname=VSMFileSystem", "-o", "debug",};
 //            String[] fuse_args = { "-s", "-o", "volname=VSMFileSystem", "-o", "debug", "-o", "allow_root"};
 //            String[] fuse_args = {"-d","-s", "-o", "allow_other"};

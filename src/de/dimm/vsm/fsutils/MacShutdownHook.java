@@ -19,8 +19,7 @@ public class MacShutdownHook extends ShutdownHook
         
         try {
             MacFuseVSMFS.unmount(mountPoint);
-        } catch (IOException iOException) {
-        } catch (InterruptedException interruptedException) {
+        } catch (IOException | InterruptedException iOException) {
         }
         
     }

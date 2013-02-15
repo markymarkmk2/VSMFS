@@ -9,7 +9,7 @@ package de.dimm.vsm.fsutils;
  *
  * @author Administrator
  */
-public interface VSMFS
+public interface IVSMFS
 {
     void setShutdownHook(ShutdownHook hook );
     ShutdownHook getShutdownHook();

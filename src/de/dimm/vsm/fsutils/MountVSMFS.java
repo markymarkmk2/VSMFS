@@ -15,9 +15,10 @@ import org.apache.log4j.Logger;
 
 public class MountVSMFS
 {
+    static boolean allowWrite = true;
     static RemoteStoragePoolHandler sp_handler;
     
-    public static VSMFS mount_vsmfs(InetAddress host, int port, StoragePoolWrapper pool/*, Date timestamp, String subPath, User user*/, String drive, boolean use_fuse)
+    public static IVSMFS mount_vsmfs(InetAddress host, int port, StoragePoolWrapper pool, String drive, boolean use_fuse, boolean rdwr)
     {
         // -v VSMFS -m R
         checkJavaVersion();
@@ -29,8 +30,16 @@ public class MountVSMFS
             String[] fuse_args  = { "-s", "-r", "-o", "volname=VSMFileSystem"};
             if (OSValidator.isMac())
             {
-                String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
-                fuse_args = _fuse_args;
+                if (allowWrite) 
+                {
+                    String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
+                    fuse_args = _fuse_args;
+                }
+                else
+                {
+                    String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
+                    fuse_args = _fuse_args;
+                }
             }
 //            String[] fuse_args = { "-s", "-o", "allow_other" , "-o", "volname=VSMFileSystem", "-o", "debug",};
 //            String[] fuse_args = { "-s", "-o", "volname=VSMFileSystem", "-o", "debug", "-o", "allow_root"};
@@ -51,12 +60,12 @@ public class MountVSMFS
             sp_handler.connect(host, port);
 
 
-            final VSMFS filesystem;
+            final IVSMFS filesystem;
             // FUSE ?
             if (use_fuse)
             {
                 if (OSValidator.isMac())
-                    filesystem = new MacFuseVSMFS(sp_handler, drive, log, fuse_args );
+                    filesystem = new MacFuseVSMFS(sp_handler, drive, log, fuse_args, rdwr );
                 else
                     filesystem = new FuseVSMFS(sp_handler, drive, log, fuse_args );
             }

@@ -7,7 +7,7 @@ import de.dimm.vsm.fsutils.FSENode;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.fsutils.ShutdownHook;
 import de.dimm.vsm.net.interfaces.FileHandle;
-import de.dimm.vsm.fsutils.VSMFS;
+import de.dimm.vsm.fsutils.IVSMFS;
 import de.dimm.vsm.net.RemoteFSElem;
 import java.io.File;
 
@@ -24,7 +24,7 @@ import org.apache.log4j.Logger;
 
 
 
-public class FuseVSMFS implements Filesystem3, XattrSupport, VSMFS
+public class FuseVSMFS implements Filesystem3, XattrSupport, IVSMFS
 {
     ShutdownHook hook;
 

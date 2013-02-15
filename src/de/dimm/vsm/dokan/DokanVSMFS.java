@@ -32,7 +32,7 @@ import de.dimm.vsm.fsutils.FSENode;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.fsutils.ShutdownHook;
 import de.dimm.vsm.fsutils.Utils;
-import de.dimm.vsm.fsutils.VSMFS;
+import de.dimm.vsm.fsutils.IVSMFS;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.records.FileSystemElemNode;
 import java.io.File;
@@ -74,7 +74,7 @@ import org.apache.log4j.Logger;
 
 
 
-public class DokanVSMFS implements DokanOperations, VSMFS
+public class DokanVSMFS implements DokanOperations, IVSMFS
 {
 
     ShutdownHook hook;

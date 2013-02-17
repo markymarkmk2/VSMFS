@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.logging.Level;
 import org.apache.log4j.Logger;
 import org.catacombae.jfuse.FUSE;
 import org.catacombae.jfuse.FUSEErrorValues;
@@ -31,7 +30,6 @@ import org.catacombae.jfuse.types.system.StatVFS;
 import org.catacombae.jfuse.types.system.Timespec;
 import org.catacombae.jfuse.types.system.Utimbuf;
 import org.catacombae.jfuse.util.FUSEUtil;
-import org.catacombae.jfuse.util.Log;
 
 
 
@@ -213,10 +211,15 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         {
             return -FUSEErrorValues.EACCES;
         }
-        catch (IOException | PathResolveException iOException)
+        catch (PathResolveException edxc)
         {
             return -FUSEErrorValues.EINVAL;
         }
+        catch (IOException edxc)
+        {
+            return -FUSEErrorValues.EINVAL;
+        }
+
         
         mf = resolvePath(pathStr);
         if (mf == null)
@@ -506,7 +509,15 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             }
             remoteFSApi.mkdir(pathStr);
         }
-        catch (IOException | PathResolveException | PoolReadOnlyException iOException)
+        catch (PoolReadOnlyException ex)
+        {
+             return -FUSEErrorValues.EINVAL;
+        }
+        catch (PathResolveException ex)
+        {
+             return -FUSEErrorValues.EINVAL;
+        }
+        catch (IOException  iOException)
         {
             return -FUSEErrorValues.EINVAL;
         }
@@ -1097,7 +1108,9 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
                     throw new FuseException().initErrno(FuseException.ENODATA);
                 }
             }
-        } catch (SQLException | FuseException ex) {
+        } catch (SQLException ex) {
+            return -FUSEErrorValues.EACCES;
+        } catch (FuseException ex) {
             return -FUSEErrorValues.EACCES;
         }
         finally

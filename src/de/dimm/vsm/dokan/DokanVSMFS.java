@@ -666,6 +666,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     public void onSetFileAttributes( String fileName, int fileAttributes, DokanFileInfo arg2 ) throws DokanOperationException
     {
          log("[onSetFileAttributes] " + fileName + " " + arg2.toString());
+         System.out.println("TODO: Setfiletimes");
 		/*
          * MemFileInfo fi = fileInfoMap.get(fileName); if (fi == null) throw new
          * DokanOperationException(ERROR_FILE_NOT_FOUND); fi.fileAttribute =
@@ -892,6 +893,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
     private void log( String string )
     {
+        logs( string);
          log.debug(string);
     }
 

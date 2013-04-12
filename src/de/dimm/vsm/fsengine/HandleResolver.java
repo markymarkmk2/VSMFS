@@ -253,6 +253,7 @@ public class HandleResolver
         }
         catch (Exception f)
         {
+            f.printStackTrace();
             log.error("cannot resolve handleNo " + handleNo );
             return null;
         }

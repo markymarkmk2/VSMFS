@@ -247,7 +247,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             switch (creationDisposition)
             {
                 case CREATE_NEW:
-                    throw new DokanOperationException(ERROR_ALREADY_EXISTS);
+                            throw new DokanOperationException(ERROR_ALREADY_EXISTS);
                 case OPEN_ALWAYS:
 
                 case OPEN_EXISTING:

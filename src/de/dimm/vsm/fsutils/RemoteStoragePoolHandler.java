@@ -326,10 +326,12 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 //        RemoteFileHandle handle = new RemoteFileHandle(this,  idx);
 //        return handle;
 //    }
-    public FileHandle open_file_handle( RemoteFSElem fseNode, boolean b ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
+    public FileHandle open_file_handle( RemoteFSElem fseNode, boolean forWrite ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
+        long handleNo = -1;
         l("open_file_handle hno " + fseNode.getIdx());
-        long handleNo = api.open_fh(poolWrapper, fseNode, b);
+        handleNo = api.open_fh(poolWrapper, fseNode.getIdx(), forWrite);
+        
         if (handleNo == -1)
             throw new IOException("Cannot open file " + fseNode.getPath() );
 
@@ -340,10 +342,10 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         return handle;
     }
 
-    public FileHandle open_stream_handle( RemoteFSElem fseNode, boolean b ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
+    public FileHandle open_stream_handle( RemoteFSElem fseNode, boolean forWrite ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
         l("open_file_handle hno " + fseNode.getIdx());
-        long handleNo = api.open_stream(poolWrapper, fseNode, b);
+        long handleNo = api.open_stream(poolWrapper, fseNode.getIdx(), forWrite);
         if (handleNo == -1)
             throw new IOException("Cannot open file " + fseNode.getPath() );
         
@@ -417,6 +419,6 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     public long open_file_handle_no( RemoteFSElem node, boolean create ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
         l("open_file_handle_no");
-        return api.open_fh(poolWrapper, node, create);
+        return api.open_fh(poolWrapper, node.getIdx(), create);
     }
 }

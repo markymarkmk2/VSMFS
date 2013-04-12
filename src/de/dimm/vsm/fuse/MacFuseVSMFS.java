@@ -114,23 +114,23 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     
     static void traceEnter( Object ...s)
     {
-        StringBuilder sb = new StringBuilder("TraceEnter: ");
-        for (Object string : s) {
-            if (string instanceof ByteBuffer)
-                sb.append(resolveBuffer(((ByteBuffer)string).duplicate()));
-            else
-                sb.append(string.toString());
-        }
-        System.err.println(sb.toString());        
+//        StringBuilder sb = new StringBuilder("TraceEnter: ");
+//        for (Object string : s) {
+//            if (string instanceof ByteBuffer)
+//                sb.append(resolveBuffer(((ByteBuffer)string).duplicate()));
+//            else
+//                sb.append(string.toString());
+//        }
+//        System.err.println(sb.toString());
     }
     
     static void traceLeave( Object ...s)
     {
-        StringBuilder sb = new StringBuilder("TraceLeave: ");
-        for (Object string : s) {
-            sb.append(string);
-        }
-        System.err.println(sb.toString());        
+//        StringBuilder sb = new StringBuilder("TraceLeave: ");
+//        for (Object string : s) {
+//            sb.append(string);
+//        }
+//        System.err.println(sb.toString());
     }
     
     @Override
@@ -1128,18 +1128,19 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         StringBuilder sb = new StringBuilder();
         try
         {
-            FSENode mf = this.resolvePath(path);
-            List<String> list = mf.list_xattributes();
-            for (int i = 0; i < list.size(); i++)
-            {
-                String string = list.get(i);
-                if (sb.length() > 0)
-                {
-                    sb.append(',');
-
-                }
-                sb.append(string);
-            }
+            // Not supported
+//            FSENode mf = this.resolvePath(path);
+//            List<String> list = mf.list_xattributes();
+//            for (int i = 0; i < list.size(); i++)
+//            {
+//                String string = list.get(i);
+//                if (sb.length() > 0)
+//                {
+//                    sb.append(',');
+//
+//                }
+//                sb.append(string);
+//            }
             namebuf.put(sb.toString().getBytes());
         }
         catch (Exception e)

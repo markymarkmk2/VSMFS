@@ -10,6 +10,7 @@ import de.dimm.vsm.net.interfaces.FileHandle;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.log4j.Logger;
@@ -30,6 +31,7 @@ public class HandleResolver
 
 
     ConcurrentHashMap<String,FSENode> nodeMap = new ConcurrentHashMap<String, FSENode>();
+    
 
     private Logger log;
 
@@ -69,8 +71,7 @@ public class HandleResolver
         }
         catch (Exception e)
         {
-            log.error("Exception in get_FileHandleEntry: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in get_FileHandleEntry: ", e );
             throw new IOException(e);
         }
         finally
@@ -90,8 +91,7 @@ public class HandleResolver
         }
         catch (Exception e)
         {
-            log.error("Exception in get_DirHandleEntry: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in get_DirHandleEntry: ", e );
             throw new IOException(e);
         }
         finally
@@ -115,8 +115,7 @@ public class HandleResolver
         }
         catch (Exception e)
         {
-            log.error("Exception in get_FileHandle: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in put_FileHandle: ", e );
             throw new IOException(e);
         }
         finally
@@ -142,8 +141,7 @@ public class HandleResolver
         }
         catch (Exception e)
         {
-            log.error("Exception in get_FileHandle: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in put_DirHandle: ", e );
             throw new IOException(e);
         }
         finally
@@ -165,13 +163,13 @@ public class HandleResolver
             {
                 FileHandle fh = entry.fh;
                 fh.close();
+                removeNodeEntry( entry.node );                
                 log.debug(" ->closed FileChannel " + handleNo);
             }
         }
         catch (Exception e)
         {
-            log.error("Exception in close_FileHandle: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in close_FileHandle: ", e );
             throw new IOException(e);
         }
         finally
@@ -188,13 +186,13 @@ public class HandleResolver
             DirHandleEntry entry = dir_handles.remove(handleNo);
             if (entry != null)
             {
+                removeNodeEntry( entry.node );
                 log.debug(" ->closed DirHandle " + entry.toString());
             }
         }
         catch (Exception e)
         {
-            log.error("Exception in close_FileHandle: " + e.getMessage() );
-            e.printStackTrace();
+            log.error("Exception in close_FileHandle: " , e );
             throw new IOException(e);
         }
         finally
@@ -217,7 +215,7 @@ public class HandleResolver
             FileHandleEntry fhe = get_FileHandleEntry(fh.fh);
             return fhe.fh;
         }
-        catch (IOException f)
+        catch (Exception f)
         {
             return null;
         }
@@ -230,7 +228,7 @@ public class HandleResolver
             FileHandleEntry fhe = get_FileHandleEntry(handleNo);
             return fhe.fh;
         }
-        catch (IOException f)
+        catch (Exception f)
         {
             return null;
         }
@@ -253,8 +251,7 @@ public class HandleResolver
         }
         catch (Exception f)
         {
-            f.printStackTrace();
-            log.error("cannot resolve handleNo " + handleNo );
+            log.error("cannot resolve handleNo " + handleNo, f );
             return null;
         }
     }
@@ -271,5 +268,19 @@ public class HandleResolver
     public FSENode clearNodeCache(String path )
     {
         return nodeMap.remove(path);
+    }
+
+    private void removeNodeEntry( FSENode node )
+    {
+        for (Map.Entry<String, FSENode> entry : nodeMap.entrySet())
+        {
+            String path = entry.getKey();
+            FSENode _node = entry.getValue();
+            if (node.equals( _node)) 
+            {
+                nodeMap.remove(path);
+                break;
+            }            
+        }        
     }
 }

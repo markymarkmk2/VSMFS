@@ -32,12 +32,12 @@ public class MountVSMFS
             {
                 if (allowWrite) 
                 {
-                    String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
+                    String[] _fuse_args = { "-s", "-o", "allow_other", "-o", "volname=VSMFileSystem" };
                     fuse_args = _fuse_args;
                 }
                 else
                 {
-                    String[] _fuse_args = { "-s", "-r", "-o", "volname=VSMFileSystem", "-o", "allow_other" };
+                    String[] _fuse_args = { "-s", "-r", "-o", "allow_other", "-o", "volname=VSMFileSystem" };
                     fuse_args = _fuse_args;
                 }
             }

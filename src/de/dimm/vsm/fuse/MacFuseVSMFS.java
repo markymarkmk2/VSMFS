@@ -25,6 +25,7 @@ import org.catacombae.jfuse.MacFUSEFileSystemAdapter;
 import org.catacombae.jfuse.types.fuse26.FUSEDirFil;
 import org.catacombae.jfuse.types.fuse26.FUSEFileInfo;
 import org.catacombae.jfuse.types.fuse26.FUSEFillDir;
+import org.catacombae.jfuse.types.system.FileStatusFlags;
 import org.catacombae.jfuse.types.system.Stat;
 import org.catacombae.jfuse.types.system.StatVFS;
 import org.catacombae.jfuse.types.system.Timespec;
@@ -291,12 +292,13 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     {
         traceEnter("flush", path, fh.toString());
         
-        FileHandle ch = handleResolver.get_handle_by_info( fh );
+        
         try
         {
+            FileHandle ch = handleResolver.get_handle_by_info( fh );
             ch.force(true);
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             log.error("unable to sync file", e);
             return -1;
@@ -310,12 +312,13 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     {
         traceEnter("fsync", path, fh.toString());
         
-        FileHandle ch = handleResolver.get_handle_by_info( fh );
+        
         try
         {
+            FileHandle ch = handleResolver.get_handle_by_info( fh );
             ch.force(true);
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             log.error("unable to sync file", e);
             return -1;
@@ -575,13 +578,24 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     @Override
     public int open( ByteBuffer path, FUSEFileInfo fi )            
     {
-        traceEnter("open", path);
+        boolean create = fi.getFlagCreate() || fi.getFlagReadWrite() || fi.getFlagAppend() || fi.getFlagWriteOnly() ;
+        traceEnter("open" + (create ? " RW" : "") + " " + fi.flags, path);
+        if (fi.flags != 0)
+        {
+            try
+            {
+                FileStatusFlags.Print.main( (String[]) null );
+            }
+            catch (Exception exception)
+            {
+            }
+        }
         
         try
         {
             FSENode mf = resolvePath(path);
             
-            boolean create = fi.getFlagCreate();
+            
             
             fi.fh = open_FileHandle(mf, create);
         }
@@ -908,7 +922,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
 		      long offset,
 		      FUSEFileInfo fi )
     {
-        traceEnter("write", path);
+        traceEnter("write o:" + offset + " l:" + buf.capacity(), path);
     
             
         /*
@@ -920,6 +934,8 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         buf.get(b);
         try
         {
+            log.debug("Writing " + buf.capacity() + " byte "  + " at pos " + offset + " to handle " + fi.fh  );
+
             ch.writeFile(b,  b.length, offset);
             return b.length;
         }
@@ -1079,7 +1095,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             {
                 log.error("unable to close channel" + handleNo, e);
             }
-            }
+     }
 
 
     

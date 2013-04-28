@@ -34,6 +34,17 @@ public class FSENode
     {
         return fseNode.toString(); 
     }
+
+    @Override
+    public boolean equals( Object obj )
+    {
+        if (obj instanceof FSENode)
+        {
+            FSENode n = (FSENode)obj;
+            return (n.fseNode.getIdx() != 0 && n.fseNode.getIdx() == fseNode.getIdx());                
+        }
+        return super.equals( obj );
+    }
     
     
 

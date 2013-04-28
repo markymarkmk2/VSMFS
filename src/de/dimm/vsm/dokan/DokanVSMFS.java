@@ -307,10 +307,14 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                     {
                         log.debug("creating " + path);
                         RemoteFSElem node = remoteFSApi.create_fse_node(path, FileSystemElemNode.FT_FILE);
+
                         if (node == null)
                             throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
 
-                        mf = new FSENode(node, remoteFSApi );
+                        mf = resolveNode(fileName);
+                        if (mf == null)
+                            throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
+                        
                         long handle = open_FileHandle(mf,  true);
                         if (handle <= 0)
                             throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
@@ -364,6 +368,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         {
             pathName = WinFileUtilities.win_to_sys_path(pathName);
             remoteFSApi.mkdir(pathName);
+            
         }
         catch (Exception iOException)
         {
@@ -482,8 +487,10 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         
         try
         {
-            FileHandle ch = handleResolver.get_FileHandleEntry( arg1.handle).getFh();
+            FileHandleEntry fhe = handleResolver.get_FileHandleEntry( arg1.handle);
+            FileHandle ch = fhe.getFh();
             ch.force(true);
+            handleResolver.clearNodeCache(fhe.getNode().get_path());
         }
         catch (IOException e)
         {
@@ -510,7 +517,15 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         }
         else
         {
-            FSENode mf = handleResolver.get_fsenode_by_handleNo( arg1.handle );
+            FSENode mf = null;
+            if (arg1.handle == 0)
+            {
+                mf = resolveNode(fileName);
+            }
+            else
+            {
+                mf = handleResolver.get_fsenode_by_handleNo( arg1.handle );
+            }
            
             if (mf == null)
             {
@@ -535,9 +550,16 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         return bhfi;
     }
     @Override
-    public void onCleanup( String arg0, DokanFileInfo arg2 )
+    public void onCleanup( String winpath, DokanFileInfo arg2 )
             throws DokanOperationException
     {
+        log("[onCleanup] " + winpath  + " " + arg2.toString());
+
+        FSENode n = handleResolver.clearNodeCache(winpath);
+        if (n != null)
+        {
+            log.debug("Cleared Node in cache");
+        }
 
     }
 
@@ -659,6 +681,9 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     @Override
     public Win32FindData[] onFindFilesWithPattern( String arg0, String arg1, DokanFileInfo arg2 ) throws DokanOperationException
     {
+        log("[onFindFilesWithPattern] " + arg0  + " " + arg1  + " " + arg2.toString());
+        System.out.println("TODO: onFindFilesWithPattern");
+
         return null;
     }
 
@@ -666,7 +691,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     public void onSetFileAttributes( String fileName, int fileAttributes, DokanFileInfo arg2 ) throws DokanOperationException
     {
          log("[onSetFileAttributes] " + fileName + " " + arg2.toString());
-         System.out.println("TODO: Setfiletimes");
+         System.out.println("TODO: onSetFileAttributes");
 		/*
          * MemFileInfo fi = fileInfoMap.get(fileName); if (fi == null) throw new
          * DokanOperationException(ERROR_FILE_NOT_FOUND); fi.fileAttribute =
@@ -675,15 +700,18 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     }
 
     @Override
-    public void onSetFileTime( String fileName, long creationTime, long atime, long mtime, DokanFileInfo arg4 ) throws DokanOperationException
+    public void onSetFileTime( String fileName, long ctime, long atime, long mtime, DokanFileInfo arg4 ) throws DokanOperationException
     {
-        log("[onSetFileTime] " + fileName + " A: " + atime + " M: " + mtime);
-        FSENode mf = this.resolveNode(fileName);
+        log("[onSetFileTime] " + fileName + " " + arg4.toString() + " C: " + ctime + " A: " + atime + " M: " + mtime);
+        FSENode mf =  handleResolver.get_fsenode_by_handleNo( arg4.handle );
+        if (mf == null)
+        {
+            mf = this.resolveNode(fileName);
+        }
 
         try
-        {
-            System.out.println("TODO: Setfiletimes");
-           // mf.set_ms_times(FileTime.toJavaTime(creationTime), FileTime.toJavaTime(atime), FileTime.toJavaTime(mtime));
+        {            
+            mf.set_ms_times(FileTime.toJavaTime(ctime), FileTime.toJavaTime(atime), FileTime.toJavaTime(mtime));
         }
         catch (Exception exception)
         {
@@ -714,6 +742,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                 log.warn("unable to delete file " + fileName);
                 throw new DokanOperationException(ERROR_FILE_NOT_FOUND);
             }
+            handleResolver.clearNodeCache(name);
         }
         catch (Exception poolReadOnlyException)
         {
@@ -738,6 +767,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                 log.debug("unable to delete folder " + path);
                 throw new DokanOperationException(WinError.ERROR_DIR_NOT_EMPTY);
             }
+            handleResolver.clearNodeCache(name);
         }
         catch (Exception poolReadOnlyException)
         {
@@ -757,6 +787,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             from = WinFileUtilities.win_to_sys_path( from );
 
            this.remoteFSApi.move_fse_node(  from, to );
+           
+           handleResolver.clearNodeCache(from);
         }
         catch (Exception e)
         {
@@ -858,13 +890,14 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     private FSENode resolveNode( String winpath ) throws DokanOperationException
     {
         String path = WinFileUtilities.win_to_sys_path(winpath);
+        log.debug("Resolved path " + winpath + " to " + path);
 
         FSENode n = handleResolver.getNodeCache(winpath);
         if (n != null)
         {
+            log.debug("Node in cache");
             return n;
         }
-        log.debug("Resolved path " + winpath + " to " + path);
 
 
         RemoteFSElem fse = null;
@@ -887,6 +920,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
         handleResolver.addNodeCache(node, winpath);
 
+        log.debug("Node in DB");
+        
         return node;
     }
 
@@ -907,7 +942,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         return hook;
     }
 /*
-    @Override
+ @Override
     public DokanFileSecurity onGetFileSecurity( String filename, DokanFileInfo fileInfo ) throws DokanOperationException
     {
         log.debug("onGetFileSecurity: Not supported yet.");

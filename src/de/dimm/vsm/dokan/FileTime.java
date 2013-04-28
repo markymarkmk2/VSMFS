@@ -91,12 +91,18 @@ public class FileTime
     {
         long milliseconds = ftime / (10000) - TIME_DIFFERENCE_IN_MILLISECONDS;
 
+        if (milliseconds < 0)
+            milliseconds = 0;
+
         return new Date(milliseconds);
     }
 
     static public long toJavaTime( long ftime )
     {
         long milliseconds = ftime / (10000) - TIME_DIFFERENCE_IN_MILLISECONDS;
+
+        if (milliseconds < 0)
+            milliseconds = 0;
 
         return milliseconds;
     }

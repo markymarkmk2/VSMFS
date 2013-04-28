@@ -268,4 +268,8 @@ public class HandleResolver
     {
         return nodeMap.get(path);
     }
+    public FSENode clearNodeCache(String path )
+    {
+        return nodeMap.remove(path);
+    }
 }

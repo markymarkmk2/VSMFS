@@ -29,6 +29,14 @@ public class FSENode
         this.remoteFSApi = remoteFSApi;
     }
 
+    @Override
+    public String toString()
+    {
+        return fseNode.toString(); 
+    }
+    
+    
+
     public boolean isStreamPath()
     {
         return streamPath;
@@ -244,6 +252,11 @@ public class FSENode
     {
         l("add_xattribute");
         remoteFSApi.add_xattribute( fseNode, name,  valStr );
+    }
+
+    public void set_ms_times( long toJavaTime, long toJavaTime0, long toJavaTime1 ) throws IOException, SQLException, PoolReadOnlyException
+    {
+        remoteFSApi.set_ms_times(fseNode.getFileHandle(), toJavaTime, toJavaTime0, toJavaTime1);
     }
 
 

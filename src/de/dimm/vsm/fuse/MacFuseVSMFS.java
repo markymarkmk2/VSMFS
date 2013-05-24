@@ -1195,6 +1195,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
 //        {
 //            traceLeave("getxattr");
 //        }
+        traceLeave("getxattr");
         return -FUSEErrorValues.ENOENT;
         //return 0;
     }

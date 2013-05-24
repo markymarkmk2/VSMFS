@@ -98,7 +98,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             }
         }
 
-        log.info("mounting " + handler.getName() + " to " + mountPoint + " with opts " + opts.toString());
+        log.info("mounting " + handler.getName() + (rdwr?" rdwr" : " rdonly") + " to " + mountPoint + " with opts " + opts.toString());
         //this.mountedVolume = mountedVolume;
         //sdfsCmds = new SDFSCmds(this.mountedVolume, this.mountPoint);
 
@@ -115,23 +115,38 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     
     static void traceEnter( Object ...s)
     {
-//        StringBuilder sb = new StringBuilder("TraceEnter: ");
-//        for (Object string : s) {
-//            if (string instanceof ByteBuffer)
-//                sb.append(resolveBuffer(((ByteBuffer)string).duplicate()));
-//            else
-//                sb.append(string.toString());
-//        }
-//        System.err.println(sb.toString());
+        StringBuilder sb = new StringBuilder("TraceEnter: ");
+        for (Object string : s) {
+            if (string instanceof ByteBuffer)
+                sb.append(resolveBuffer(((ByteBuffer)string).duplicate()));
+            else
+                sb.append(string.toString());
+            sb.append(" ");
+        }
+        System.err.println(sb.toString());
+    }
+    
+    static void traceLog( Object ...s)
+    {
+        StringBuilder sb = new StringBuilder("TraceLog  : ");
+        for (Object string : s) {
+            if (string instanceof ByteBuffer)
+                sb.append(resolveBuffer(((ByteBuffer)string).duplicate()));
+            else
+                sb.append(string.toString());
+            sb.append(" ");
+        }
+        System.err.println(sb.toString());
     }
     
     static void traceLeave( Object ...s)
     {
-//        StringBuilder sb = new StringBuilder("TraceLeave: ");
-//        for (Object string : s) {
-//            sb.append(string);
-//        }
-//        System.err.println(sb.toString());
+        StringBuilder sb = new StringBuilder("TraceLeave: ");
+        for (Object string : s) {
+            sb.append(string);
+            sb.append(" ");
+        }
+        System.err.println(sb.toString());
     }
     
     @Override
@@ -192,7 +207,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     @Override
     public int create(ByteBuffer path, short mode, FUSEFileInfo fi) 
     {
-        traceEnter("ctreate", path);
+        traceEnter("create", path);
 
         if (!rdwr)
             return -FUSEErrorValues.ENOTSUP;
@@ -206,7 +221,13 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             {
                 return -FUSEErrorValues.EEXIST;
             }
-            remoteFSApi.create_fse_node(pathStr, FileSystemElemNode.FT_FILE);
+            RemoteFSElem elem = remoteFSApi.create_fse_node(pathStr, FileSystemElemNode.FT_FILE);
+            mf = resolvePath(pathStr);
+            if (mf == null)
+            {
+                return -FUSEErrorValues.EACCES;
+            }
+            fi.fh = open_FileHandle(mf, true);
         }
         catch (PoolReadOnlyException iOException)
         {
@@ -216,17 +237,14 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         {
             return -FUSEErrorValues.EINVAL;
         }
-        catch (IOException edxc)
+        catch (Exception edxc)
         {
             return -FUSEErrorValues.EINVAL;
         }
 
         
         mf = resolvePath(pathStr);
-        if (mf == null)
-        {
-            return -FUSEErrorValues.EACCES;
-        }
+        
 
         try
         {
@@ -269,8 +287,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     {
         
         traceEnter("chown");
-        String pathStr = resolveBuffer(path);          
-        FSENode mf = resolvePath(pathStr);
+        FSENode mf = resolvePath(path);
         
             try
             {
@@ -279,6 +296,8 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             }
             catch (Exception e)
             {
+                        String pathStr = resolveBuffer(path);          
+
                 log.error("unable to chown " + pathStr, e);
                 return -1;
             }
@@ -292,11 +311,12 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     {
         traceEnter("flush", path, fh.toString());
         
-        
+       
         try
         {
             FileHandle ch = handleResolver.get_handle_by_info( fh );
-            ch.force(true);
+            if (ch != null)
+                ch.force(true);
         }
         catch (Exception e)
         {
@@ -316,7 +336,10 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         try
         {
             FileHandle ch = handleResolver.get_handle_by_info( fh );
-            ch.force(true);
+            if (ch != null)
+                ch.force(true);
+            
+            handleResolver.clearNodeCache( resolveBuffer( path) );
         }
         catch (Exception e)
         {
@@ -342,7 +365,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         stat.st_gid = gid;
         stat.st_uid = uid;
         stat.st_size = fileLength;
-        if (mode == 0)
+        if (mode == 0 || (mode & (Stat.S_IFDIR | Stat.S_IFREG )) == 0)
         {
             if (mf.isDirectory())
             {
@@ -359,6 +382,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         {
             stat.st_mode = mode;    
         }
+        stat.st_mode |= 0666;
     }
     private static void rfillStat( Stat stat, RemoteFSElem mf )
     {
@@ -399,23 +423,42 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     public int getattr( ByteBuffer path, Stat stat )
     {   
         traceEnter("getattr", path);
-        String pathStr = resolveBuffer(path);          
+        String pathStr = resolveBuffer(path); 
+        String[] skipNames = {};
+//        String[] skipNames = {".DSStore", "Contents", ".LSOverride", "Support Files", "Icon", "MacOS", "Mac OS 8", "Mac OS X", "MacOSClassic"};
+
+        for (int i = 0; i < skipNames.length; i++)
+        {
+            String string = skipNames[i];
+            if (pathStr.endsWith(string))
+            {   traceLeave("getattr skip");
+                return -FUSEErrorValues.ENOENT;
+            }
+        }
+        
+            
         FSENode mf = resolvePath(pathStr);
   
         if (mf == null)
+        {            
+            traceLeave("getattr noent");
             return -FUSEErrorValues.ENOENT;
+        }
         
         try
         {
             mfillStat( stat, mf );
+            stat.printFields( "", System.err);
+                    
 
         }
         catch (Exception e)
         {
+            traceLeave("getattr exc");
             log.error("unable to parse attributes " + path, e);
             return -1;
         }
-        traceLeave("getattr");
+        traceLeave("getattr ok");
         return 0;
     }
 
@@ -438,6 +481,8 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             {
                 RemoteFSElem cf = list.get(i);
                 
+                traceLog("getdir",  cf.getName());
+
                 dirFiller.fill( FUSEUtil.encodeUTF8(cf.getName()), cf.hashCode(), getFtype(cf));
                 if (cf.getStreamSize() > 0)
                 {
@@ -474,9 +519,14 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             {
                 RemoteFSElem cf = list.get(i);
 
-//                Stat stat = new Stat();
-//                fillStat( stat, cf );
                 dirFiller.fill(FUSEUtil.encodeUTF8(cf.getName()), null, 0);
+                
+                FSENode node = new FSENode(cf, remoteFSApi );
+                
+                String cfPath = resolveBuffer(path);
+                cfPath += "/" + cf.getName();
+                handleResolver.addNodeCache(node, cfPath);
+                traceLog("readdir",  cf.getName());
             }
         }
         catch (Exception e)
@@ -598,6 +648,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
             
             
             fi.fh = open_FileHandle(mf, create);
+            fi.direct_io = true;
         }
         catch (Exception e)
         {
@@ -786,9 +837,12 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         traceEnter("access", path);
         FSENode ffrom = resolvePath(path);
         if (ffrom == null)
+        {
+            traceLeave("access nok");
             return -1;
+        }
         
-        traceLeave("access");
+        traceLeave("access ok");
         return 0;
     }
     
@@ -830,7 +884,8 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         {
             FSENode ffrom = resolvePath(path);
 
-            ffrom.truncate(size);            
+            ffrom.truncate(size);    
+            handleResolver.clearNodeCache( resolveBuffer( path ) );
         }
         catch (Exception e)
         {
@@ -848,22 +903,25 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     public int unlink( ByteBuffer path )
     {
         traceEnter("unlink", path);
-        FSENode f = this.resolvePath(path);
+        
+        String pathStr = resolveBuffer( path );
         try
         {
-            if (remoteFSApi.remove_fse_node(f.get_path()))
+            handleResolver.clearNodeCache( pathStr );
+
+            if (remoteFSApi.remove_fse_node(pathStr))
             {
                 return 0;
             }
             else
             {
-                log.warn("unable to delete file " + f.get_path());
+                log.warn("unable to delete file " + pathStr);
                 return -FUSEErrorValues.EACCES;
             }
         }
         catch (Exception e)
         {
-            log.error("unable to file file " + path, e);
+            log.error("unable to file file " + pathStr, e);
             return -FUSEErrorValues.EACCES;
         }
         finally
@@ -955,6 +1013,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     
     private static String resolveBuffer( ByteBuffer bpath )
     {
+        bpath.rewind();
         String pathString = FUSEUtil.decodeUTF8(bpath);
         
         return pathString;
@@ -965,15 +1024,16 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         String path = resolveBuffer(bpath);
         return resolvePath(path);
     }
+    
     private FSENode resolvePath( String path )
     {
         boolean isStreamPath = false;
         int idx = path.lastIndexOf('/');
-        if (idx >= 0 && path.length() - idx > 2 && path.charAt(idx + 1) == '.' && path.charAt(idx + 2) == '_')
-        {
-            path = path.substring(0, idx + 1) + path.substring(idx + 3);
-            isStreamPath = true;
-        }
+//        if (idx >= 0 && path.length() - idx > 2 && path.charAt(idx + 1) == '.' && path.charAt(idx + 2) == '_')
+//        {
+//            path = path.substring(0, idx + 1) + path.substring(idx + 3);
+//            isStreamPath = true;
+//        }
         
         FSENode n = handleResolver.getNodeCache(path);
         if (n != null)
@@ -999,7 +1059,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         }
         if (fse == null)
         {
-           // log.debug("No such node: " + path);
+           // log.debug("No such node: " + path);            
             return null;
         }
         FSENode node = new FSENode(fse, remoteFSApi );
@@ -1105,35 +1165,38 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     public int getxattr( ByteBuffer path, ByteBuffer bname, ByteBuffer dst, long position )
     {
         traceEnter("getxattr", path);
-        try
-        {
-            int ftype = this.getFtype(path);
-            if (ftype != FuseFtype.TYPE_SYMLINK)
-            {
-                FSENode mf = this.resolvePath(path);
-
-                String name = resolveBuffer( bname );
-                String val = mf.get_xattribute(name);
-                if (val != null)
-                {
-                    log.debug("val=" + val);
-                    dst.put(val.getBytes());
-                }
-                else
-                {
-                    throw new FuseException().initErrno(FuseException.ENODATA);
-                }
-            }
-        } catch (SQLException ex) {
-            return -FUSEErrorValues.EACCES;
-        } catch (FuseException ex) {
-            return -FUSEErrorValues.EACCES;
-        }
-        finally
-        {
-            traceLeave("getxattr");
-        }
-        return 0;
+//        dst.put("".getBytes());
+//        try
+//        {
+//            int ftype = this.getFtype(path);
+//            if (ftype != FuseFtype.TYPE_SYMLINK)
+//            {
+//                FSENode mf = this.resolvePath(path);
+//
+//                String name = resolveBuffer( bname );
+//                String val = mf.get_xattribute(name);
+//                val = null;
+//                if (val != null)
+//                {
+//                    log.debug("val=" + val);
+//                    dst.put(val.getBytes());
+//                }
+//                else
+//                {
+//                    throw new FuseException().initErrno(FuseException.ENODATA);
+//                }
+//            }
+//        } catch (SQLException ex) {
+//            return -FUSEErrorValues.EACCES;
+//        } catch (FuseException ex) {
+//            return 0;//-FUSEErrorValues.ENOENT;
+//        }
+//        finally
+//        {
+//            traceLeave("getxattr");
+//        }
+        return -FUSEErrorValues.ENOENT;
+        //return 0;
     }
 
     @Override

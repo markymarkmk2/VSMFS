@@ -40,16 +40,19 @@ class RemoteFileHandle implements FileHandle
     }
 
 
+    @Override
     public void force( boolean b ) throws IOException
     {
         l("force");
         remoteFSApi.force( serverFhIdx, b );
     }
 
+    @Override
     public int read( byte[] b, int length, long offset ) throws IOException
     {
         throw new RuntimeException("Not allowed from client, cannot write into buffer on stack");
     }
+    @Override
     public byte[] read( int length, long offset ) throws IOException
     {
         l("read");
@@ -57,12 +60,14 @@ class RemoteFileHandle implements FileHandle
         return b;
     }
 
+    @Override
     public void close() throws IOException
     {
         l("close");
         remoteFSApi.close( serverFhIdx );
     }
 
+    @Override
     public void create() throws IOException, PoolReadOnlyException
     {
         l("create");
@@ -70,29 +75,34 @@ class RemoteFileHandle implements FileHandle
         
     }
 
+    @Override
     public void truncateFile( long size ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("truncateFile");
         remoteFSApi.truncateFile( serverFhIdx, size );
     }
 
+    @Override
     public void writeFile( byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("writeFile");
         remoteFSApi.writeFile( serverFhIdx, b, length, offset );
     }
 
+    @Override
     public boolean delete()
     {
         l("delete");
          throw new RuntimeException("Cannot delete from remote");
     }
 
+    @Override
     public long length()
     {
         return remoteFSApi.length(serverFhIdx);
     }
 
+    @Override
     public boolean exists()
     {
         return remoteFSApi.length(serverFhIdx) >= 0;
@@ -171,36 +181,61 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         api = fs_server_conn.getStoragePoolHandlerApi(adr, port, false, /*tcp*/ false);
     }
 
+    @Override
     public RemoteFSElem create_fse_node( String fileName, String type ) throws IOException, PoolReadOnlyException, PathResolveException
     {
         l("create_fse_node");
         return api.create_fse_node(poolWrapper, fileName, type);
     }
 
+    @Override
     public RemoteFSElem resolve_node( String path ) throws SQLException
     {
         l("resolve_node");
         return api.resolve_node(poolWrapper, path);
     }
+    long lastTotalBlocks;
+    long lastUsedBlocks;
+    int  lastBlockSize;
+    long lastStafsTS = 0;
+    
+    void checkStatfs()
+    {
+        long now = System.currentTimeMillis();
+        if (now - lastStafsTS > 120*1000) 
+        {
+            lastTotalBlocks = api.getTotalBlocks(poolWrapper);
+            lastUsedBlocks = api.getUsedBlocks(poolWrapper);
+            lastBlockSize = api.getBlockSize(poolWrapper);
+            lastStafsTS = now;
+        }
+    }
 
+    @Override
     public long getTotalBlocks()
     {
         l("getTotalBlocks");
-        return api.getTotalBlocks(poolWrapper);
+        checkStatfs();
+        return lastTotalBlocks;
     }
 
+    @Override
     public long getUsedBlocks()
     {
         l("getUsedBlocks");
-        return api.getUsedBlocks(poolWrapper);
+        checkStatfs();
+        return lastUsedBlocks;
     }
 
+    @Override
     public int getBlockSize()
     {
         l("getBlockSize");
-        return api.getBlockSize(poolWrapper);
+        checkStatfs();
+        return lastBlockSize;
     }
 
+    @Override
     public void mkdir( String pathName ) throws IOException, PoolReadOnlyException, PathResolveException
     {
         l("mkdir");
@@ -215,24 +250,28 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 
 
 
+    @Override
     public String getName()
     {
         l("getName");
         return api.getName(poolWrapper);
     }
 
+    @Override
     public boolean remove_fse_node( String path ) throws PoolReadOnlyException, SQLException
     {
         l("remove_fse_node");
         return api.delete_fse_node(poolWrapper, path);
     }
 
+    @Override
     public List<RemoteFSElem> get_child_nodes( RemoteFSElem node ) throws SQLException
     {
         l("get_child_nodes");
         return api.get_child_nodes(poolWrapper, node);
     }
 
+    @Override
     public void move_fse_node( String from, String to ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
         l("move_fse_node");
@@ -244,6 +283,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 //        l("set_ms_times");
 //        api.set_ms_times(pool, fseNode.getIdx(), toJavaTime, toJavaTime0, toJavaTime1 );
 //    }
+    @Override
     public void set_ms_times( long idx, long toJavaTime, long toJavaTime0, long toJavaTime1 ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("set_ms_times");
@@ -255,18 +295,21 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         throw new UnsupportedOperationException("Not supported yet.");
     }*/
 
+    @Override
     public boolean exists( RemoteFSElem fseNode ) throws IOException
     {
         l("exists");
         return api.exists(poolWrapper, fseNode);
     }
 
+    @Override
     public void force( long idx, boolean b ) throws IOException
     {
         l("force");
         api.force( poolWrapper, idx, b );
     }
 
+    @Override
     public byte[] read( long idx, int length, long offset ) throws IOException
     {
         l("read");
@@ -279,24 +322,28 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         return l;
     }
 
+    @Override
     public void close( long idx ) throws IOException
     {
         l("close");
         api.close_fh( poolWrapper, idx );
     }
 
+    @Override
     public void create( long idx ) throws IOException, PoolReadOnlyException
     {
         l("create");
         api.create( poolWrapper, idx );
     }
 
+    @Override
     public void truncateFile( long idx, long size ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("truncateFile");
         api.truncateFile( poolWrapper, idx, size );
     }
 
+    @Override
     public void writeFile( long idx, byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("writeFile");
@@ -328,7 +375,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 //    }
     public FileHandle open_file_handle( RemoteFSElem fseNode, boolean forWrite ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
-        long handleNo = -1;
+        long handleNo;
         l("open_file_handle hno " + fseNode.getIdx());
         handleNo = api.open_fh(poolWrapper, fseNode.getIdx(), forWrite);
         
@@ -416,6 +463,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         api.set_group_id(poolWrapper, fseNode, gid);
     }
 
+    @Override
     public long open_file_handle_no( RemoteFSElem node, boolean create ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
         l("open_file_handle_no");

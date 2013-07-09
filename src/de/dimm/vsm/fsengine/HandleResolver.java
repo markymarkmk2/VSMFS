@@ -6,13 +6,15 @@
 package de.dimm.vsm.fsengine;
 
 import de.dimm.vsm.fsutils.FSENode;
+import de.dimm.vsm.fsutils.VirtualFSFile;
+import de.dimm.vsm.fsutils.VirtualRemoteFileHandle;
 import de.dimm.vsm.net.interfaces.FileHandle;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import org.apache.log4j.Logger;
 import org.catacombae.jfuse.types.fuse26.FUSEFileInfo;
 
@@ -22,16 +24,18 @@ import org.catacombae.jfuse.types.fuse26.FUSEFileInfo;
  */
 public class HandleResolver
 {
-    public static final long DIROFFSET = 4000000001L;
-    long newDirHandleIdx = 1;
-
-    final HashMap<Long,FileHandleEntry> file_handles = new HashMap<Long,FileHandleEntry>();
-    final HashMap<Long,DirHandleEntry> dir_handles = new HashMap<Long,DirHandleEntry>();
-    private ReentrantLock channelLock = new ReentrantLock();
-
-
-    ConcurrentHashMap<String,FSENode> nodeMap = new ConcurrentHashMap<String, FSENode>();
+    // We need a unique FileHandle for Files / Dirs / Virtual Files
+    public static final long DIROFFSET = 4000000001L;  // 4000000001L open Files on Server allowed
+    public static final long VIRTUALFSOFFSET = 8000000002L; // 4000000001L open Directories on Clientallowed
     
+
+    final Map<Long,VirtualFileHandleEntry> virtual_file_handles = new ConcurrentHashMap<>();
+    final Map<Long,FileHandleEntry> file_handles = new ConcurrentHashMap<>();
+    final Map<Long,DirHandleEntry> dir_handles = new ConcurrentHashMap<>();
+    
+
+
+    ConcurrentHashMap<String,FSENode> nodeMap = new ConcurrentHashMap<>();    
 
     private Logger log;
 
@@ -48,67 +52,107 @@ public class HandleResolver
         {
             try
             {
-                iter.next().fh.close();
+                iter.next().close();
             }
             catch (IOException e)
             {
             }
         }
+        Iterator<VirtualFileHandleEntry> viter = virtual_file_handles.values().iterator();
+        while (viter.hasNext())
+        {
+            try
+            {
+                viter.next().close();
+            }
+            catch (IOException e)
+            {
+            }
+        }
+        Iterator<DirHandleEntry> diter = dir_handles.values().iterator();
+        while (diter.hasNext())
+        {
+            diter.next().close();            
+        }
     }
 
+    public boolean isFileHandle( long handleNo )
+    {
+        return handleNo < DIROFFSET;
+    }
     public boolean isDirHandle( long handleNo )
     {
-        return (handleNo >= DIROFFSET);
+        return (handleNo >= DIROFFSET && handleNo < VIRTUALFSOFFSET);
+    }
+    public boolean isVirtualFileHandle( long handleNo )
+    {
+        return (handleNo >= VIRTUALFSOFFSET);
+    }
+    
+    public boolean isforWrite( long handleNo )
+    {
+        try
+        {
+            if (isFileHandle(handleNo))
+            {
+                FileHandleEntry fe = get_FileHandleEntry(handleNo);
+            
+                return fe.isForWrite();
+            }
+            if (isVirtualFileHandle(handleNo))
+            {
+                
+            }
+        }
+        catch (Exception e)
+        {
+            log.error("Exception in isforWrite: ", e );
+        }
+        
+        return false;
+    }
+
+    public VirtualFileHandleEntry get_VirtualFileHandleEntry( long handle ) throws IOException
+    {
+        return virtual_file_handles.get( handle );
     }
 
     public FileHandleEntry get_FileHandleEntry( long handle ) throws IOException
     {
-        try
+        if (isVirtualFileHandle(handle))
+            return virtual_file_handles.get(handle);
+        
+        return file_handles.get( handle );
+    }
+    public FileHandleEntry remove_FileHandleEntry( long handle ) throws IOException
+    {
+        if (isVirtualFileHandle(handle))
         {
-            channelLock.lock();
-
-            return file_handles.get( handle );
+            FileHandleEntry ret = virtual_file_handles.remove(handle);
+            log.debug("number of vfs file handles is " + virtual_file_handles.size());
+            return ret;
         }
-        catch (Exception e)
-        {
-            log.error("Exception in get_FileHandleEntry: ", e );
-            throw new IOException(e);
-        }
-        finally
-        {
-            channelLock.unlock();
-        }
-
+        
+        FileHandleEntry ret = file_handles.remove( handle );
+        log.debug("number of file handles is " + file_handles.size());
+        return ret;
     }
 
     public DirHandleEntry get_DirHandleEntry( long handle ) throws IOException
     {
-        try
-        {
-            channelLock.lock();
-
-            return dir_handles.get( handle );
-        }
-        catch (Exception e)
-        {
-            log.error("Exception in get_DirHandleEntry: ", e );
-            throw new IOException(e);
-        }
-        finally
-        {
-            channelLock.unlock();
-        }
-
+        return dir_handles.get( handle );
+    }
+    public DirHandleEntry remove_DirHandleEntry( long handle ) throws IOException
+    {
+        return dir_handles.remove( handle );
     }
 
-    public long put_FileHandle( FSENode mf, FileHandle handle ) throws IOException
+    public long put_FileHandle( FSENode mf, FileHandle handle, boolean forWrite ) throws IOException
     {
         try
         {
-            channelLock.lock();
-
             long handleNo = mf.getNode().getFileHandle();
-            FileHandleEntry entry = new FileHandleEntry(handle, mf);
+            FileHandleEntry entry = new FileHandleEntry(handle, mf, forWrite);
             file_handles.put(handleNo, entry);
 
             return handleNo;
@@ -121,20 +165,17 @@ public class HandleResolver
         finally
         {
             log.debug("number of file handles is " + file_handles.size());
-            channelLock.unlock();
         }
     }
+    
     public long put_DirHandle( FSENode mf ) throws IOException
     {
         try
-        {
-            channelLock.lock();
-            
+        {            
             // ARTIFICIAL INDEX, NOT USED IN CLOSE AND ON... FUNCTIONS
             // DOKAN DOESNT DISTINGUISH BETWEEN DIRS AND FILES, WE DO
-
-            long handleNo = DIROFFSET + newDirHandleIdx++;
-            DirHandleEntry entry = new DirHandleEntry( mf);
+            long handleNo = getNextFreeDirHandleNo();
+            DirHandleEntry entry = new DirHandleEntry( mf, handleNo);            
             dir_handles.put(handleNo, entry);
 
             return handleNo;
@@ -146,26 +187,79 @@ public class HandleResolver
         }
         finally
         {
-            log.debug("number of file handles is " + file_handles.size());
-            channelLock.unlock();
+            log.debug("number of dir handles is " + dir_handles.size());
+        }
+    }    
+    
+    public long put_VirtualFileHandle( VirtualRemoteFileHandle file, FSENode mf ) throws IOException
+    {
+        try
+        {            
+            // ARTIFICIAL INDEX, NOT USED IN CLOSE AND ON... FUNCTIONS
+            // DOKAN DOESNT DISTINGUISH BETWEEN DIRS AND FILES, WE DO
+            long handleNo = getNextFreeVirtualFileHandleNo();
+            VirtualFileHandleEntry entry = new VirtualFileHandleEntry( file, mf, handleNo);            
+            virtual_file_handles.put(handleNo, entry);
+
+            return handleNo;
+        }
+        catch (Exception e)
+        {
+            log.error("Exception in put_VirtualFileHandle: ", e );
+            throw new IOException(e);
+        }
+        finally
+        {
+            log.debug("number of virtual handles is " + virtual_file_handles.size());
         }
     }
+    
+    long getNextFreeDirHandleNo()
+    {
+        long maxId = DIROFFSET;
+        Collection<DirHandleEntry> col = dir_handles.values();
+        for (DirHandleEntry dirHandleEntry : col)
+        {
+            if (maxId < dirHandleEntry.getHandle())
+            {
+                maxId = dirHandleEntry.getHandle();
+            }            
+        }
+        return maxId + 1;        
+    }
 
+    long getNextFreeVirtualFileHandleNo()
+    {
+        long maxId = VIRTUALFSOFFSET;
+        Collection<VirtualFileHandleEntry> col = virtual_file_handles.values();
+        for (VirtualFileHandleEntry entry : col)
+        {
+            if (maxId < entry.getHandle())
+            {
+                maxId = entry.getHandle();
+            }            
+        }
+        return maxId + 1;        
+    }
 
-
-    public void close_FileHandle(  long handleNo ) throws IOException
+    public void cleanup_FileHandle(  long handleNo ) throws IOException
     {
         try
         {
-            channelLock.lock();
-            FileHandleEntry entry = file_handles.remove(handleNo);
+            FileHandleEntry entry = get_FileHandleEntry(handleNo);
             if (entry != null)
             {
                 FileHandle fh = entry.fh;
                 fh.close();
-                removeNodeEntry( entry.node );                
-                log.debug(" ->closed FileChannel " + handleNo);
+                if (entry.isForWrite())
+                    removeNodeEntry( entry.node );                
+                log.debug(" ->cleanup FileChannel " + handleNo);
             }
+            else
+            {
+                log.debug(" ->FileHandle not found " + handleNo);
+            }
+            
         }
         catch (Exception e)
         {
@@ -174,32 +268,69 @@ public class HandleResolver
         }
         finally
         {
-            log.debug("number of file handles is " + file_handles.size());
-            channelLock.unlock();
+            
         }
+    }
+
+
+    public void close_FileHandle(  long handleNo ) throws IOException
+    {
+        try
+        {
+            FileHandleEntry entry = remove_FileHandleEntry(handleNo);
+            if (entry != null)
+            {
+                           
+                log.debug(" ->closed FileChannel " + handleNo);
+            }
+            else
+            {
+                log.debug(" ->FileHandle not found " + handleNo);
+            }
+            
+        }
+        catch (Exception e)
+        {
+            log.error("Exception in close_FileHandle: ", e );
+            throw new IOException(e);
+        }
+       
+    }
+    public void cleanup_DirHandle(  long handleNo ) throws IOException
+    {
+       
     }
     public void close_DirHandle(  long handleNo ) throws IOException
     {
         try
         {
-            channelLock.lock();
             DirHandleEntry entry = dir_handles.remove(handleNo);
             if (entry != null)
             {
-                removeNodeEntry( entry.node );
+                //removeNodeEntry( entry.node );
                 log.debug(" ->closed DirHandle " + entry.toString());
+            }
+            else
+            {
+                log.debug(" ->DirHandle not found " + handleNo);
             }
         }
         catch (Exception e)
         {
-            log.error("Exception in close_FileHandle: " , e );
+            log.error("Exception in close_DirHandle: " , e );
             throw new IOException(e);
         }
         finally
         {
-            log.debug("number of file handles is " + file_handles.size());
-            channelLock.unlock();
+            log.debug("number of dir handles is " + dir_handles.size());
         }
+    }
+    public void cleanup_Handle(  long handleNo ) throws IOException
+    {
+        if (isDirHandle(handleNo))
+            cleanup_DirHandle(handleNo);
+        else
+            cleanup_FileHandle(handleNo);
     }
     public void close_Handle(  long handleNo ) throws IOException
     {
@@ -259,14 +390,20 @@ public class HandleResolver
     // TODO CLEANUP
     public void addNodeCache( FSENode node, String path )
     {
+        log.debug("added to cache " + path );
         nodeMap.put(path, node);
     }
     public FSENode getNodeCache(String path )
     {
-        return nodeMap.get(path);
+        FSENode node = nodeMap.get(path);
+        if (node != null)
+            log.debug("got from cache " + path );
+        
+        return node;
     }
     public FSENode clearNodeCache(String path )
     {
+        log.debug("Cleared cache for " + path );
         return nodeMap.remove(path);
     }
 

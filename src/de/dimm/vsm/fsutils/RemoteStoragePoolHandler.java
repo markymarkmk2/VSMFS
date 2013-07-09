@@ -20,96 +20,6 @@ import java.net.UnknownHostException;
 import java.sql.SQLException;
 import java.util.List;
 
-
-class RemoteFileHandle implements FileHandle
-{
-    RemoteStoragePoolHandler remoteFSApi;
-    
-    long serverFhIdx;
-
-    public RemoteFileHandle( RemoteStoragePoolHandler remoteFSApi, long idx )
-    {
-        this.remoteFSApi = remoteFSApi;
-        
-        serverFhIdx = idx;
-    }
-
-    void l( String s)
-    {
-       // System.out.println("Log RFHa: " + s);
-    }
-
-
-    @Override
-    public void force( boolean b ) throws IOException
-    {
-        l("force");
-        remoteFSApi.force( serverFhIdx, b );
-    }
-
-    @Override
-    public int read( byte[] b, int length, long offset ) throws IOException
-    {
-        throw new RuntimeException("Not allowed from client, cannot write into buffer on stack");
-    }
-    @Override
-    public byte[] read( int length, long offset ) throws IOException
-    {
-        l("read");
-        byte[] b = remoteFSApi.read( serverFhIdx,  length, offset );
-        return b;
-    }
-
-    @Override
-    public void close() throws IOException
-    {
-        l("close");
-        remoteFSApi.close( serverFhIdx );
-    }
-
-    @Override
-    public void create() throws IOException, PoolReadOnlyException
-    {
-        l("create");
-        remoteFSApi.create( serverFhIdx );
-        
-    }
-
-    @Override
-    public void truncateFile( long size ) throws IOException, SQLException, PoolReadOnlyException
-    {
-        l("truncateFile");
-        remoteFSApi.truncateFile( serverFhIdx, size );
-    }
-
-    @Override
-    public void writeFile( byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException
-    {
-        l("writeFile");
-        remoteFSApi.writeFile( serverFhIdx, b, length, offset );
-    }
-
-    @Override
-    public boolean delete()
-    {
-        l("delete");
-         throw new RuntimeException("Cannot delete from remote");
-    }
-
-    @Override
-    public long length()
-    {
-        return remoteFSApi.length(serverFhIdx);
-    }
-
-    @Override
-    public boolean exists()
-    {
-        return remoteFSApi.length(serverFhIdx) >= 0;
-    }
-
-}
-
 /**
  *
  * @author Administrator
@@ -121,16 +31,13 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     StoragePoolWrapper poolWrapper;
     InetAddress adr;
     int port;
-    /*Date timestamp;
-    String subPath;
-    User user;
-*/
+    boolean buffered;
+    int writeBufferBlockSize;
+    int readBufferBlockSize;
+
     public RemoteStoragePoolHandler( StoragePoolWrapper pool/*, Date timestamp, String subPath, User user*/ )
     {
         this.poolWrapper = pool;
-//        this.timestamp = timestamp;
-//        this.subPath = subPath;
-//        this.user = user;
         this.api = null;
         this.fs_server_conn = null;
 
@@ -139,7 +46,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 
     void l( String s)
     {
-        //System.out.println("Log RSPH: " + s);
+        System.err.println("Log RSPH: " + s);
     }
 
     final void init()
@@ -152,6 +59,27 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         return api;
     }
 
+    public void setBuffered( boolean buffered )
+    {
+        this.buffered = buffered;
+    }
+
+    public boolean isBuffered()
+    {
+        return buffered;
+    }
+
+    public void setReadBufferBlockSize( int readBufferBlockSize )
+    {
+        this.readBufferBlockSize = readBufferBlockSize;
+    }
+
+    public void setWriteBufferBlockSize( int writeBufferBlockSize )
+    {
+        this.writeBufferBlockSize = writeBufferBlockSize;
+    }
+
+   
 
     public void disconnect()
     {
@@ -164,7 +92,6 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         {
         }
     }
-
     
     public void connect(String host, int port) throws UnknownHostException
     {
@@ -303,6 +230,13 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     }
 
     @Override
+    public boolean isReadOnly( long idx ) throws IOException, SQLException
+    {
+        l("exists");
+        return api.isReadOnly(poolWrapper, idx);
+    }
+
+    @Override
     public void force( long idx, boolean b ) throws IOException
     {
         l("force");
@@ -346,7 +280,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public void writeFile( long idx, byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException
     {
-        l("writeFile");
+        l("RealwriteFile at " + offset + " len " + length);
         api.writeFile( poolWrapper, idx, b, length, offset );
     }
 
@@ -385,7 +319,9 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         // STOR IN FSENODE
         fseNode.setFileHandle(handleNo);
 
-        RemoteFileHandle handle = new RemoteFileHandle(this,  handleNo);
+        FileHandle handle = isBuffered() ? 
+            new BufferedRemoteFileHandle(this, handleNo, readBufferBlockSize, writeBufferBlockSize) :
+            new RemoteFileHandle(this,  handleNo);
         return handle;
     }
 
@@ -399,7 +335,9 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         // STOR IN FSENODE
         fseNode.setFileHandle(handleNo);
 
-        RemoteFileHandle handle = new RemoteFileHandle(this,  handleNo);
+        RemoteFileHandle handle = isBuffered() ?
+            new BufferedRemoteFileHandle(this, handleNo, readBufferBlockSize, writeBufferBlockSize) :
+            new RemoteFileHandle(this,  handleNo);
         return handle;
     }
 

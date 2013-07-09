@@ -21,6 +21,7 @@ public class FSENode
     boolean streamPath;
     RemoteFSElem fseNode;
     RemoteStoragePoolHandler remoteFSApi;
+    boolean deleteOnClose;
 
 
     public FSENode( RemoteFSElem fseNode, RemoteStoragePoolHandler remoteFSApi )
@@ -45,6 +46,17 @@ public class FSENode
         }
         return super.equals( obj );
     }
+
+    public boolean isDeleteOnClose()
+    {
+        return deleteOnClose;
+    }
+
+    public void setDeleteOnClose( boolean deleteOnClose )
+    {
+        this.deleteOnClose = deleteOnClose;
+    }
+    
     
     
 

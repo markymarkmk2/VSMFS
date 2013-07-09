@@ -10,6 +10,7 @@ import de.dimm.vsm.fsutils.MacShutdownHook;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.fsutils.ShutdownHook;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.net.VfsTicket;
 import de.dimm.vsm.net.interfaces.FileHandle;
 import de.dimm.vsm.records.FileSystemElemNode;
 import java.io.File;
@@ -57,7 +58,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     FUSEOptions fuse_args;
     private Logger log;
     boolean rdwr;
-
+       
     public MacFuseVSMFS( RemoteStoragePoolHandler handler, String mountPoint, Logger logger, String[] fuse_args, boolean rdwr )
     {
 
@@ -1125,7 +1126,7 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
         {
             FileHandle handle = mf.open_file_handle( /*create*/forWrite);
 
-            long handleNo = handleResolver.put_FileHandle( mf, handle );
+            long handleNo = handleResolver.put_FileHandle( mf, handle, forWrite );
 
             log.debug("->open_FileHandle " + mf.get_name() + ": " + handleNo);
             
@@ -1285,4 +1286,5 @@ public class MacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemAdap
     }
 
 
+    
 }

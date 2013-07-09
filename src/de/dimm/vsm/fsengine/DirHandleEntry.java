@@ -11,30 +11,27 @@ import de.dimm.vsm.fsutils.FSENode;
  *
  * @author Administrator
  */
-public class DirHandleEntry
+public class DirHandleEntry extends HandleEntry
 {
-    FSENode node;
-    long handle;
 
-    public DirHandleEntry(  FSENode node )
+    public DirHandleEntry(  FSENode node, long handleNo )
     {
-        this.node = node;
+        super(node);
+        this.handle = handleNo;
     }
+
 
     @Override
-    public String toString()
-    {
-        return node.get_path();
-    }
-
-    public FSENode getNode()
-    {
-        return node;
-    }
-
     public long getHandle()
     {
         return handle;
     }
+
+    @Override
+    public void close()
+    {
+        
+    }
+    
 
 }

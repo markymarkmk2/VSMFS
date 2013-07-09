@@ -43,7 +43,7 @@ public class FuseVSMFS implements Filesystem3, XattrSupport, IVSMFS
 
     String[] fuse_args;
     Logger logger;
-
+    
     public FuseVSMFS( RemoteStoragePoolHandler handler, String mountPoint, Logger logger, String[] fuse_args   )
     {
 
@@ -744,11 +744,13 @@ public class FuseVSMFS implements Filesystem3, XattrSupport, IVSMFS
         return 0;
     }
 
+    @Override
     public void setShutdownHook( ShutdownHook hook )
     {
         this.hook = hook;
     }
 
+    @Override
     public ShutdownHook getShutdownHook()
     {
         return hook;

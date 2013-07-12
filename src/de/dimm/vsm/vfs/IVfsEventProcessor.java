@@ -22,4 +22,5 @@ public interface IVfsEventProcessor
     boolean waitProcess( long id, int timout )  throws IOException;
     boolean fetchResult( long id )  throws IOException;
     void abortProcess( long id );
+    long getMaxLocalFileThreshold();
 }

@@ -7,6 +7,7 @@ package de.dimm.vsm.fsutils;
 import de.dimm.vsm.Utilities.MaxSizeHashMap;
 import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.vfs.IBufferedEventProcessor;
 import de.dimm.vsm.vfs.IVfsEventProcessor;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -21,9 +22,9 @@ import java.util.logging.Logger;
  *
  * @author Administrator
  */
-public class VirtualFSFile
+public class VirtualFSFile implements IVirtualFSFile
 {
-    long size = 0;
+    
     int blocksize = 1024*1024; // TODO: Should come from server
     // 
     public static final int MAX_WRITE_BLOCKS = 250;
@@ -32,7 +33,7 @@ public class VirtualFSFile
     
     boolean abort = false;
     RemoteFSElem elem;
-    IVfsEventProcessor eventProcessor;
+    IBufferedEventProcessor eventProcessor;
     Map<Long,Block>blockMap = new HashMap<>();
     Semaphore sema = new Semaphore(MAX_WRITE_BLOCKS);
     
@@ -42,6 +43,7 @@ public class VirtualFSFile
     
     MaxSizeHashMap<Long,Block> readBuffStack = new MaxSizeHashMap<>(30);    
 
+    @Override
     public boolean existsBlock( long offset, int size)
     {
         Block bl = waitForBlockFinished(offset);
@@ -49,8 +51,17 @@ public class VirtualFSFile
         return bl != null && bl.getData().length == size;        
     }
 
+    @Override
+    public RemoteFSElem getElem()
+    {
+        return elem;
+    }
     
-    void closeWrite() throws IOException
+    
+
+    
+    @Override
+    public void closeWrite() throws IOException
     {
         // On WriteClose we set all Blocks finished, maybe we have short write (Sparse?)
         for (Block bl: blockMap.values())
@@ -115,9 +126,10 @@ public class VirtualFSFile
         }
     }
 
+    @Override
     public boolean closeRead()
     {
-         VirtualFsFilemanager.removeFile(elem.getPath());
+         VirtualFsFilemanager.getSingleton().removeFile(eventProcessor, elem.getPath());
          VSMFSLogger.getLog().debug("Closeread blocks ");                            
          blockMap.clear();
          return true;
@@ -156,25 +168,21 @@ public class VirtualFSFile
         {
             this.finished = finished;
         }        
-    }
-    
+    }    
 
-    public VirtualFSFile(IVfsEventProcessor eventProcessor, RemoteFSElem elem)
+    public VirtualFSFile(IBufferedEventProcessor eventProcessor, RemoteFSElem elem)
     {
         this.eventProcessor = eventProcessor;
         this.elem = elem;
-    }
-          
+        
+    }             
 
-    public boolean close()
-    {        
-        return true;
-    }
-
+    @Override
     public void force( boolean b )
     {
     }
 
+    @Override
     public int read( byte[] b, int length, long offset )
     {       
         int restLength = length;
@@ -203,6 +211,10 @@ public class VirtualFSFile
         }
         return destPos;
     }
+    long getSize()
+    {
+        return elem.getDataSize();
+    }
     
     boolean warnedWait;
     
@@ -221,19 +233,19 @@ public class VirtualFSFile
         {
             if (!warnedWait)
             {
-                VSMFSLogger.getLog().debug("Warte auf Block " + offset + "/" + size + " für " + this.elem.getPath() + (block == null?" -> missing":" -> not finished"));
+                VSMFSLogger.getLog().debug("Warte auf Block " + offset + "/" + getSize() + " für " + this.elem.getPath() + (block == null?" -> missing":" -> not finished"));
                 warnedWait = true;
             }
             long now = System.currentTimeMillis();
             if (now - startTime > MAX_WAIT_MS)
             {
-                VSMFSLogger.getLog().error("Timeout für Block " + offset + "/" + size + " für " + this.elem.getPath());
+                VSMFSLogger.getLog().error("Timeout für Block " + offset + "/" + getSize() + " für " + this.elem.getPath());
                 break;
             }
             
             if (abort)
             {
-                VSMFSLogger.getLog().error("Abbruch für Block " + offset + "/" + size + " für " + this.elem.getPath());
+                VSMFSLogger.getLog().error("Abbruch für Block " + offset + "/" + getSize() + " für " + this.elem.getPath());
                 break;
             }
             
@@ -287,6 +299,7 @@ public class VirtualFSFile
         throw new IOException("Timeout for Block " + offset);
     }       
 
+    @Override
     public byte[] read( int length, long offset )
     {
         byte[] data = new byte[length];
@@ -301,17 +314,19 @@ public class VirtualFSFile
         return data;
     }
 
+    @Override
     public void create()
     {
-        size = 0;
+        elem.setDataSize(0);
     }
 
-    void truncateFile( long size )
+    @Override
+    public void truncateFile( long size )
     {
-        this.size = size;
+        elem.setDataSize(size);
         
         // Abort ?
-        if (size == 0)
+        if (getSize() == 0)
         {
             abort();            
         }
@@ -350,11 +365,25 @@ public class VirtualFSFile
             throw interruptedException;
         }
     }
+    int getSemaPercentFree()
+    {
+        return (sema.availablePermits() * 100) / MAX_WRITE_BLOCKS;
+    }
 
     private Block waitForNextBlock(long realOffset, int newLength) throws IOException
     {                
         try
         {
+            // Throttle down Read speed:
+            // if less than 20%  left then pause up to 1s per block
+            int percentFree = getSemaPercentFree();
+            if (percentFree < 20)
+            {
+                int pauseMs = (20 - percentFree) * 50;
+                VSMFSLogger.getLog().debug("Slowing down write speed with delay " + Integer.toString(pauseMs) + " ms");
+                sleepMs(pauseMs);
+            }
+                
             if (sema.availablePermits() == 0)
             {
                 VSMFSLogger.getLog().debug("Warte auf Server bei block " + realOffset + " total: " + blockMap.size());                            
@@ -373,10 +402,14 @@ public class VirtualFSFile
         return block;
     }
 
+    @Override
     public void writeFile( byte[] b, int length, long offset ) throws IOException
     {
-        if (size < offset + length)
-            size = offset + length;
+        
+        if (getSize() < offset + length)
+        {
+            elem.setDataSize( offset + length);
+        }
  
         int restLength = length;
         int destPos = 0;
@@ -393,9 +426,9 @@ public class VirtualFSFile
             {
                 int newLength = blocksize;
                 // Länge zu groß ?
-                if (newLength > size - realOffset)
+                if (newLength > getSize() - realOffset)
                 {
-                    newLength = (int)(size - realOffset);
+                    newLength = (int)(getSize() - realOffset);
                 }
                 
                 // CHECK FOR START OF FETCH THREAD
@@ -428,6 +461,7 @@ public class VirtualFSFile
         }                           
     }
 
+    @Override
     public boolean delete()
     {
         VSMFSLogger.getLog().debug("Clr blocks");                            
@@ -436,6 +470,7 @@ public class VirtualFSFile
         sema.release(MAX_WRITE_BLOCKS);
         return true;
     }
+    @Override
     public void abort()
     {
         VSMFSLogger.getLog().debug("Clr blocks");       
@@ -450,14 +485,25 @@ public class VirtualFSFile
         }
     }
 
+    @Override
     public long length()
     {
-        return size;
+        return getSize();
     }
 
+    @Override
     public boolean exists()
     {
         return true;
     }
-    
+    void sleepMs(int ms)
+    {
+        try
+        {
+            Thread.sleep(ms);
+        }
+        catch (InterruptedException ex)
+        {
+        }
+    }        
 }

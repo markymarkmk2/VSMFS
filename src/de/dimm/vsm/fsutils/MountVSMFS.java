@@ -6,7 +6,7 @@ import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.fsutils.utils.OSValidator;
 import de.dimm.vsm.fuse.MacFuseVSMFS;
 import de.dimm.vsm.net.StoragePoolWrapper;
-import de.dimm.vsm.vfs.IVfsEventProcessor;
+import de.dimm.vsm.vfs.IBufferedEventProcessor;
 import java.net.InetAddress;
 
 import java.util.Properties;
@@ -19,7 +19,7 @@ public class MountVSMFS
     static boolean allowWrite = true;
     static RemoteStoragePoolHandler sp_handler;
     
-    public static IVSMFS mount_vsmfs(InetAddress host, int port, StoragePoolWrapper pool, IVfsEventProcessor processor, String drive, boolean use_fuse, boolean rdwr)
+    public static IVSMFS mount_vsmfs(InetAddress host, int port, StoragePoolWrapper pool, IBufferedEventProcessor processor, String drive, boolean use_fuse, boolean rdwr)
     {
         // -v VSMFS -m R
         checkJavaVersion();
@@ -62,6 +62,8 @@ public class MountVSMFS
             // TODO: from Server
             sp_handler.setReadBufferBlockSize(1024*1024);
             sp_handler.connect(host, port);
+            
+            processor.setRemoteStoragePoolHandler(sp_handler);
 
 
             final IVSMFS filesystem;

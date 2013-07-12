@@ -6,7 +6,7 @@
 package de.dimm.vsm.fsengine;
 
 import de.dimm.vsm.fsutils.FSENode;
-import de.dimm.vsm.fsutils.VirtualFSFile;
+import de.dimm.vsm.fsutils.IVirtualFSFile;
 import de.dimm.vsm.fsutils.VirtualRemoteFileHandle;
 import java.io.IOException;
 
@@ -23,7 +23,7 @@ public class VirtualFileHandleEntry extends FileHandleEntry
     }
 
 
-    public VirtualFSFile getFile()
+    public IVirtualFSFile getFile()
     {
         return ((VirtualRemoteFileHandle)fh).getFile();
     }

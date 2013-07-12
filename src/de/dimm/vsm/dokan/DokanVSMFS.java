@@ -35,9 +35,11 @@ import de.dimm.vsm.fsutils.ShutdownHook;
 import de.dimm.vsm.fsutils.Utils;
 import de.dimm.vsm.fsutils.IVSMFS;
 import de.dimm.vsm.fsutils.VirtualFSENode;
+import de.dimm.vsm.fsutils.VirtualFsFilemanager;
 import de.dimm.vsm.fsutils.VirtualRemoteFileHandle;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.records.FileSystemElemNode;
+import de.dimm.vsm.vfs.IBufferedEventProcessor;
 import de.dimm.vsm.vfs.IVfsEventProcessor;
 import java.sql.SQLException;
 import net.decasdev.dokan.DokanOptions;
@@ -94,8 +96,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     RemoteStoragePoolHandler remoteFSApi;
 
     HandleResolver handleResolver;
-    boolean test = false;
-    IVfsEventProcessor processor;
+    IBufferedEventProcessor processor;
 
 
     private Logger log = VSMFSLogger.getLog();
@@ -135,7 +136,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 //        }
 //    }
 
-    public DokanVSMFS( RemoteStoragePoolHandler api,  IVfsEventProcessor processor, String drive, Logger log )
+    public DokanVSMFS( RemoteStoragePoolHandler api,  IBufferedEventProcessor processor, String drive, Logger log )
     {
 //        if (api == null)
 //            test = true;
@@ -146,15 +147,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
         showVersions();
 
-        if (!test)
-        {
-            hook = new ShutdownHook( drive, false );
-            Runtime.getRuntime().addShutdownHook(hook);
-        }
-
+        hook = new ShutdownHook( drive, false );
         handleResolver = new HandleResolver(log);
-
-
     }
 
     final void showVersions()
@@ -181,8 +175,9 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     @Override
     public boolean mount()
     {
-        unmount();
-
+        // Sicherheitshalber denselben Mount entfernen
+        Dokan.removeMountPoint(drive);
+        
         //this.mountedVolume = mountedVolume;
         DokanOptions dokanOptions = new DokanOptions();
         //dokanOptions.driveLetter = driveLetter;
@@ -201,6 +196,11 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         String mount_name = remoteFSApi.getName();
         log.info("Mounting " + mount_name + " to " + this.drive);
         int result = Dokan.mount(dokanOptions, this);
+        
+        if (result == 0)
+        {
+            Runtime.getRuntime().addShutdownHook(hook);            
+        }
 
         return result == 0 ? true : false;
         
@@ -214,8 +214,12 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     @Override
     public boolean unmount()
     {
+        log("[unmount] shutting down FS-Processor");
+        processor.shutdown();
+        log("[unmount] disconnecting");
         remoteFSApi.disconnect();
 
+        log("[unmount] removeMountPoint " + drive);
         boolean ret = Dokan.removeMountPoint(drive);
 
         if (ret)
@@ -223,6 +227,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
         return ret;
     }
+
 
     @Override
     public long onCreateFile( String fileName, int desiredAccess, int shareMode,
@@ -238,8 +243,13 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             creationDisposition = CREATE_NEW;
         }
         
-        FSENode mf = resolveNode(fileName);
-
+        FSENode mf = null;
+        
+        // Ask for existing node only it can exist
+        if (creationDisposition != CREATE_NEW)
+        {
+            mf = resolveNode(fileName);
+        }        
 
         if (mf != null)
         {
@@ -296,10 +306,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         }
         else
         {
-
             switch (creationDisposition)
             {
-
                 case CREATE_NEW:
                 case CREATE_ALWAYS:
                 case OPEN_ALWAYS:
@@ -368,12 +376,12 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     }
 
     @Override
-    public void onCreateDirectory( String pathName, DokanFileInfo file )
+    public void onCreateDirectory( String winPathName, DokanFileInfo file )
             throws DokanOperationException
     {
-        log("[onCreateDirectory] " + pathName + " " + file.toString());        
+        log("[onCreateDirectory] " + winPathName + " " + file.toString());        
 
-        FSENode f = resolveNode(pathName);
+        FSENode f = resolveNode(winPathName);
         if (f != null)
         {
             f = null;
@@ -381,8 +389,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
         }
         try
         {
-            pathName = WinFileUtilities.win_to_sys_path(pathName);
-            remoteFSApi.mkdir(pathName);
+            String pathName = WinFileUtilities.win_to_sys_path(winPathName);
+            remoteFSApi.mkdir(pathName);            
             
         }
         catch (Exception iOException)
@@ -421,6 +429,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                 try
                 {
                     String name = WinFileUtilities.win_to_sys_path(winPath);
+                    
                     if (!remoteFSApi.remove_fse_node(name))
                     {
                         log.debug("unable to delete file/folder " + winPath);
@@ -660,6 +669,9 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             else
             {
                 List<RemoteFSElem> list = remoteFSApi.get_child_nodes( f.getNode() );
+                
+                List<RemoteFSElem> vfsList = VirtualFsFilemanager.getSingleton().get_child_nodes(WinFileUtilities.win_to_sys_path(pathName));
+                list.addAll(vfsList);
 
                 List<Win32FindData>cacheFileList = new ArrayList<>();
                 
@@ -704,6 +716,8 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                 cf.getDataSize(), 0, 0, ".", ".");
 
                 cacheFileList.add(d);
+                
+                
                 
                 cache_files = cacheFileList.toArray(new Win32FindData[0]);
             }

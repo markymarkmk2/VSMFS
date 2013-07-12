@@ -257,7 +257,7 @@ public class HandleResolver
             }
             else
             {
-                log.debug(" ->FileHandle not found " + handleNo);
+                log.warn(" ->FileHandle not found " + handleNo);
             }
             
         }
@@ -285,7 +285,7 @@ public class HandleResolver
             }
             else
             {
-                log.debug(" ->FileHandle not found " + handleNo);
+                log.warn(" ->FileHandle not found " + handleNo);
             }
             
         }
@@ -312,7 +312,7 @@ public class HandleResolver
             }
             else
             {
-                log.debug(" ->DirHandle not found " + handleNo);
+                log.warn(" ->DirHandle not found " + handleNo);
             }
         }
         catch (Exception e)
@@ -354,6 +354,9 @@ public class HandleResolver
     
     public FileHandle get_handle_by_handleNo( long handleNo ) throws IOException
     {
+        if (handleNo == 0)
+            return null;
+        
         try
         {
             FileHandleEntry fhe = get_FileHandleEntry(handleNo);
@@ -367,6 +370,9 @@ public class HandleResolver
     }
     public FSENode get_fsenode_by_handleNo( long handleNo )
     {
+        if (handleNo == 0)
+            return null;
+        
         try
         {
             if (isDirHandle(handleNo))

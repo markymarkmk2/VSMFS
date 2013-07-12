@@ -8,7 +8,7 @@ import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.net.interfaces.FileHandle;
-import de.dimm.vsm.vfs.IVfsEventProcessor;
+import de.dimm.vsm.vfs.IBufferedEventProcessor;
 import java.io.IOException;
 import java.sql.SQLException;
 
@@ -19,9 +19,9 @@ import java.sql.SQLException;
 public class VirtualFSENode extends FSENode
 {
 
-    IVfsEventProcessor processor;
+    IBufferedEventProcessor processor;
 
-    public VirtualFSENode( RemoteFSElem node, RemoteStoragePoolHandler remoteFSApi, IVfsEventProcessor processor)
+    public VirtualFSENode( RemoteFSElem node, RemoteStoragePoolHandler remoteFSApi, IBufferedEventProcessor processor)
     {
         super(node, remoteFSApi);
         this.processor = processor;
@@ -33,10 +33,12 @@ public class VirtualFSENode extends FSENode
         l("open_file_handle");
         if (isStreamPath())
             return null;
-
-        VirtualRemoteFileHandle handle = new VirtualRemoteFileHandle( new VirtualFSFile(processor, fseNode),  fseNode);
         
-        VirtualFsFilemanager.addFile(fseNode.getPath(), handle.getFile());
+        IVirtualFSFile file = VirtualFsFilemanager.getSingleton().createFile(processor, fseNode);
+
+        VirtualRemoteFileHandle handle = new VirtualRemoteFileHandle( file ,  fseNode);
+        
+        VirtualFsFilemanager.getSingleton().addFile(fseNode.getPath(), handle.getFile());
         
         return handle;
     }    

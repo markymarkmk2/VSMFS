@@ -18,18 +18,18 @@ import java.sql.SQLException;
 
 public class VirtualRemoteFileHandle implements FileHandle
 {
-    VirtualFSFile file;
+    IVirtualFSFile file;
     
     RemoteFSElem elem;
 
-    public VirtualRemoteFileHandle( VirtualFSFile file,  RemoteFSElem elem )
+    public VirtualRemoteFileHandle( IVirtualFSFile file,  RemoteFSElem elem )
     {
         this.file = file;        
         this.elem = elem;
     }
        
 
-    public VirtualFSFile getFile()
+    public IVirtualFSFile getFile()
     {
         return file;
     }

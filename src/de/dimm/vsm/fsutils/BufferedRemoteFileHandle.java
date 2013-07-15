@@ -55,7 +55,17 @@ public class BufferedRemoteFileHandle extends RemoteFileHandle
     public void writeFile( byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException
     {
         l("buffwriteFile");
-        // Needs flush (Start doenst match or Length is too big))?
+        
+        // First check if we are overwriting something inside our writebuffer
+        if (offset >= writeBuffOffset && offset + length <= writeBuffOffset + writeBuffPos)
+        {
+            int realOffset = (int)(offset - writeBuffOffset); 
+            System.arraycopy(b, 0, writeBuff, realOffset, length);
+            // Nothing more to do -> leave
+            return;
+        }
+        
+        // Needs flush? (Start doenst match or Length is too big))?
         if (writeBuffOffset + writeBuffPos != offset || writeBuffPos + length > writeBuff.length)
         {
             if (writeBuffPos > 0)
@@ -77,7 +87,7 @@ public class BufferedRemoteFileHandle extends RemoteFileHandle
 
         // Add to buffer
         System.arraycopy(b, 0, writeBuff, writeBuffPos, length);
-        writeBuffPos += length;
+        writeBuffPos += length;        
     }
 
     @Override
@@ -109,18 +119,32 @@ public class BufferedRemoteFileHandle extends RemoteFileHandle
     @Override
     public byte[] read( int length, long offset ) throws IOException
     {
+        // IST IN WriteBuffer ?
+        if (offset >= writeBuffOffset && offset < writeBuffPos)
+        {
+            int rlen = length;
+            int blockOffset = (int)(offset - writeBuffOffset);
+            if (blockOffset + rlen > writeBuffPos)
+            {
+                rlen = writeBuffPos - blockOffset;
+            }
+            byte[] tmp = new byte[rlen];
+            System.arraycopy(writeBuff, blockOffset, tmp, 0, rlen);
+            return tmp;                    
+        }
+        
         //l("buffread len:" + length + " off:" + offset);
         // WENN WIR SCHON OPTIMAL ABFRAGEN, NICHTS OPTIMIEREN
         if (length == readBlocksize && offset % length == 0)
             return super.read(length, offset); 
         
         int restLen = length;
+        
 
         byte[] ret = new byte[length];
         
         while (restLen > 0)
-        {
-            
+        {            
             long realOffset = (offset / readBlocksize) * readBlocksize;
             
             // Remove and put to Map to keep newest and most used in Map
@@ -147,6 +171,14 @@ public class BufferedRemoteFileHandle extends RemoteFileHandle
             if (copyLen  + offsetInBlock > readBuff.length)
                 copyLen = readBuff.length - offsetInBlock;
             
+            // ARE WE READING BEYOND EOF?
+            if (copyLen < 0)
+            {
+                ret = new byte[0];
+                break; //>>>>>>>                
+            }
+            
+            l("copy src-off: " + offsetInBlock + " trg-off:" + (length - restLen) + " len:" + copyLen);
             // Got Prematore end / Read over end of file
             if (copyLen  == 0)
             {

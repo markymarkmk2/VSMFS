@@ -50,6 +50,7 @@ public class RemoteFileHandle implements FileHandle
     {
         l("unbuffered read len:" + length + " offs:" + offset);
         byte[] b = remoteFSApi.read( serverFhIdx,  length, offset );
+        l("unbuffered read got:" + b.length);
         return b;
     }
 

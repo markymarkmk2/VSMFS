@@ -7,6 +7,7 @@ package de.dimm.vsm.fsutils;
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.FSServerConnector;
+import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.net.StoragePoolWrapper;
 import de.dimm.vsm.net.interfaces.FileHandle;
@@ -52,7 +53,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 
     void l( String s )
     {
-        System.err.println("Log RSPH: " + s);
+        VSMFSLogger.getLog().debug("RSPH: " + s);
     }
 
     final void init()
@@ -145,7 +146,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public RemoteFSElem create_fse_node( String fileName, String type ) throws IOException, PoolReadOnlyException, PathResolveException
     {
-        l("create_fse_node");
+        l("create_fse_node " + fileName + " " + type);
         try
         {
             lock();
@@ -160,7 +161,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public RemoteFSElem resolve_node( String path ) throws SQLException
     {
-        l("resolve_node");
+        l("resolve_node " + path);
         try
         {
             lock();
@@ -225,7 +226,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public void mkdir( String pathName ) throws IOException, PoolReadOnlyException, PathResolveException
     {
-        l("mkdir");
+        l("mkdir " + pathName);
         try
         {
             lock();
@@ -260,13 +261,13 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     }
 
     @Override
-    public boolean remove_fse_node( String path ) throws PoolReadOnlyException, SQLException
+    public boolean remove_fse_node( String path ) throws PoolReadOnlyException, SQLException, IOException
     {
-        l("remove_fse_node");
+        l("remove_fse_node " + path);
         try
         {
             lock();
-            return api.delete_fse_node(poolWrapper, path);
+            return api.delete_fse_node_path(poolWrapper, path);
         }
         finally
         {
@@ -276,13 +277,13 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     }
 
     @Override
-    public boolean remove_fse_node( long idx ) throws PoolReadOnlyException, SQLException
+    public boolean remove_fse_node_idx( long idx ) throws PoolReadOnlyException, SQLException, IOException
     {
-        l("remove_fse_node");
+        l("remove_fse_node " + idx);
         try
         {
             lock();
-            return api.delete_fse_node(poolWrapper, idx);
+            return api.delete_fse_node_idx(poolWrapper, idx);
         }
         finally
         {
@@ -310,11 +311,26 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public void move_fse_node( String from, String to ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
-        l("move_fse_node");
+        l("move_fse_node " + from  + " to " + to);
         try
         {
             lock();
             api.move_fse_node(poolWrapper, from, to);
+        }
+        finally
+        {
+            unlock();
+        }
+
+    }
+    @Override
+    public void move_fse_node_idx( long from, String to ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        l("move_fse_node_idx " + from  + " to " + to);
+        try
+        {
+            lock();
+            api.move_fse_node_idx(poolWrapper, from, to);
         }
         finally
         {
@@ -493,29 +509,6 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
 
     }
 
-    public void delete( FileSystemElemNode fseNode ) throws IOException, PoolReadOnlyException
-    {
-        l("delete");
-        throw new UnsupportedOperationException("Delete not yet supoorted");
-    }
-
-//    public FileHandle open_file_handle( String path, boolean b ) throws IOException
-//    {
-//        l("open_file_handle path");
-//        RemoteFSElem node = resolve_node( path );
-//        long idx;
-//        if (node != null && node.getIdx() > 0)
-//        {
-//            idx = api.open_file_handle_no(pool, node.getIdx(), b);
-//        }
-//        else
-//        {
-//            idx = api.open_file_handle_no(pool, path, b);
-//        }
-//
-//        RemoteFileHandle handle = new RemoteFileHandle(this,  idx);
-//        return handle;
-//    }
     public FileHandle open_file_handle( RemoteFSElem fseNode, boolean forWrite ) throws IOException, PoolReadOnlyException, SQLException, PathResolveException
     {
         long handleNo;

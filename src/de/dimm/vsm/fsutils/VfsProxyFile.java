@@ -33,14 +33,6 @@ public class VfsProxyFile implements IVirtualFSFile
     {
         return delegate;
     }
-    
-    void createDelegate(long size)
-    {
-        elem.setDataSize(size);
-        delegate = processor.createDelegate(elem);
-    }
-    
-    
             
     @Override
     public RemoteFSElem getElem()
@@ -60,9 +52,18 @@ public class VfsProxyFile implements IVirtualFSFile
         return delegate.closeRead();                    
     }
 
+    private void checkDelegate()
+    {
+        if (delegate == null)
+        {
+            delegate = processor.createDelegate(elem);
+        }
+    }
+    
     @Override
     public void closeWrite() throws IOException
     {
+        checkDelegate();        
         delegate.closeWrite();
     }
 
@@ -75,6 +76,7 @@ public class VfsProxyFile implements IVirtualFSFile
     @Override
     public boolean delete()
     {
+        checkDelegate();
         return delegate.delete();
     }
 
@@ -93,15 +95,14 @@ public class VfsProxyFile implements IVirtualFSFile
     @Override
     public void force( boolean b )
     {
+        checkDelegate();
         delegate.force(b);
     }
 
     @Override
     public long length()
     {
-        if (delegate != null)
-            return delegate.length();
-        return 0;
+        return elem.getDataSize();
     }
 
     @Override
@@ -125,13 +126,14 @@ public class VfsProxyFile implements IVirtualFSFile
     @Override
     public void writeFile( byte[] b, int length, long offset ) throws IOException
     {
+        checkDelegate();
         delegate.writeFile(b, length, offset);
     }
 
     @Override
     public void truncateFile( long size )
     {
-        createDelegate(size);
-    }
-    
+        elem.setDataSize(size);
+        checkDelegate();
+    }    
 }

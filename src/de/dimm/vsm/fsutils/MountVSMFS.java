@@ -54,7 +54,7 @@ public class MountVSMFS
             Logger log = VSMFSLogger.getLog();
 
             if (sp_handler != null)
-                sp_handler.close(port);
+                sp_handler.disconnect();
 
             sp_handler = new RemoteStoragePoolHandler( pool/*, timestamp, subPath, user*/ );
             sp_handler.setBuffered(true);

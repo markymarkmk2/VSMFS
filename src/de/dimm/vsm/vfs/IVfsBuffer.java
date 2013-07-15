@@ -29,5 +29,7 @@ public interface IVfsBuffer
     public void setRemoteStoragePoolHandler( RemoteStoragePoolHandler sp_handler );
    
     public IVirtualFSFile createDelegate(RemoteFSElem fseNode);
+    public void checkForFlush( String path );
+
     
 }

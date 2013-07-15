@@ -105,7 +105,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     {
         System.out.println("WinVSMFS: " + msg);
     }
-    private boolean useVirtualFS = true;
+    private boolean useVirtualFS = false;
     
 
 //    public static void test( )
@@ -460,8 +460,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     @Override
     public int onReadFile( String fileName, ByteBuffer buf, long offset, DokanFileInfo arg3 ) throws DokanOperationException
     {
-        log("[onReadFile] " + buf.capacity() + " at " + offset + " from " + fileName +  " " + arg3.toString());
-        
+        log("[onReadFile] " + buf.capacity() + " at " + offset + " from " + fileName +  " " + arg3.toString());        
         
         try
         {
@@ -470,8 +469,15 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             if (entry == null)
                 throw new IOException("No file handle found" );
 
+            // Catch empty read
+            if (offset == entry.getNode().get_size())
+            {
+                log("[onReadFile] read " + 0);
+                 return 0;
+            }
+             
             // Catch wrong read pos
-            if (offset >= entry.getNode().get_size())
+            if (offset > entry.getNode().get_size())
             {
                 log("read offset is too large: " + offset + " filelen:" + entry.getNode().get_size());            
                 return -1;
@@ -494,6 +500,7 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
                 return 0;
             }
 
+            log("[onReadFile] read " + b.length);
             buf.put(b, 0, b.length);            
             return b.length;
         }
@@ -516,9 +523,18 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
         try
         {
-            FileHandle ch = handleResolver.get_FileHandleEntry(arg3.handle).getFh();
+            FileHandleEntry entry =  handleResolver.get_FileHandleEntry(arg3.handle);
+            FileHandle ch = entry.getFh();
             ch.writeFile(b, b.length, offset);
+            
+            // Adjust size in Cache
+            long lastSize = entry.getNode().getNode().getDataSize();
+            if (offset + b.length > lastSize)
+            {
+                entry.getNode().getNode().setDataSize(offset + b.length );                
+            }
             log("wrote " + b.length + " at " + offset);
+            
         }
         catch (Exception e)
         {
@@ -537,8 +553,13 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
 
         try
         {
-            FileHandle ch = handleResolver.get_FileHandleEntry( arg2.handle).getFh();
+            FileHandleEntry entry =  handleResolver.get_FileHandleEntry(arg2.handle);
+            FileHandle ch = entry.getFh();            
             ch.truncateFile(length);
+            
+            // ADJUST CACHE
+            entry.getNode().getNode().setDataSize(length );                
+                        
         }
         catch (Exception e)
         {
@@ -552,18 +573,18 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
             throws DokanOperationException
     {
         
-        try
-        {
-            FileHandleEntry fhe = handleResolver.get_FileHandleEntry( arg1.handle);
-            FileHandle ch = fhe.getFh();
-            ch.force(true);
-            handleResolver.clearNodeCache(fileName);
-        }
-        catch (IOException e)
-        {
-            log.error("unable to sync file " + fileName, e);
-            throw new DokanOperationException(ERROR_WRITE_FAULT);
-        }
+//        try
+//        {
+//            FileHandleEntry fhe = handleResolver.get_FileHandleEntry( arg1.handle);
+//            FileHandle ch = fhe.getFh();
+//            ch.force(true);
+//            handleResolver.clearNodeCache(fileName);
+//        }
+//        catch (IOException e)
+//        {
+//            log.error("unable to sync file " + fileName, e);
+//            throw new DokanOperationException(ERROR_WRITE_FAULT);
+//        }
 
     }
 
@@ -878,13 +899,22 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     public void onMoveFile( String winFrom, String winTo, boolean replaceExisiting, DokanFileInfo arg3 ) throws DokanOperationException
     {
         log("==> [onMoveFile] " + winFrom + " -> " + winTo + ", replaceExisiting = " + replaceExisiting);
+        
 
+        FSENode f =  handleResolver.get_fsenode_by_handleNo( arg3.handle );
         try
         {
            String to = WinFileUtilities.win_to_sys_path(winTo);
-           String from = WinFileUtilities.win_to_sys_path( winFrom );
+           if (f == null || f.isDirectory())
+           {
+                String from = WinFileUtilities.win_to_sys_path( winFrom );
 
-           this.remoteFSApi.move_fse_node(  from, to );
+                this.remoteFSApi.move_fse_node(  from, to );
+           }
+           else
+           {
+                this.remoteFSApi.move_fse_node_idx(  arg3.handle, to );
+           }
            
            handleResolver.clearNodeCache(winFrom);
         }
@@ -996,6 +1026,9 @@ public class DokanVSMFS implements DokanOperations, IVSMFS
     {
         String path = WinFileUtilities.win_to_sys_path(winpath);
         log.debug("Resolved path " + winpath + " to " + path);
+        
+        processor.flush();
+//        processor.checkForFlush(path);
 
         FSENode n = handleResolver.getNodeCache(winpath);
         if (n != null)

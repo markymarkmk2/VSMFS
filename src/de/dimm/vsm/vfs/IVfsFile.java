@@ -10,5 +10,5 @@ package de.dimm.vsm.vfs;
  */
 public interface IVfsFile extends IVfsFsEntry
 {
-    
+   
 }

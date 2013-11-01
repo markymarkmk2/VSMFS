@@ -233,6 +233,7 @@ public class FSENode
     {
         l("truncate");
         remoteFSApi.truncate( fseNode, size );
+        fseNode.setDataSize( size );
     }
 
     public void set_last_accessed( long l ) throws IOException, SQLException, PoolReadOnlyException

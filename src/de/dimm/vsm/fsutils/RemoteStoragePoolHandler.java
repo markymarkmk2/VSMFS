@@ -202,7 +202,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public long getTotalBlocks()
     {
-        l("getTotalBlocks");
+        //l("getTotalBlocks");
         checkStatfs();
         return lastTotalBlocks;
     }
@@ -210,7 +210,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public long getUsedBlocks()
     {
-        l("getUsedBlocks");
+        //l("getUsedBlocks");
         checkStatfs();
         return lastUsedBlocks;
     }
@@ -218,7 +218,7 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     @Override
     public int getBlockSize()
     {
-        l("getBlockSize");
+        //l("getBlockSize");
         checkStatfs();
         return lastBlockSize;
     }
@@ -758,5 +758,10 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     {
         insideApi.unlock();
         endTime = System.currentTimeMillis();
+    }
+
+    public StoragePoolWrapper getWrapper()
+    {
+        return poolWrapper;
     }
 }

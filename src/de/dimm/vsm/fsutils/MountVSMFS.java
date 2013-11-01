@@ -5,6 +5,7 @@ import de.dimm.vsm.dokan.DokanVSMFS;
 import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.fsutils.utils.OSValidator;
 import de.dimm.vsm.fuse.MacFuseVSMFS;
+import de.dimm.vsm.fuse.VfsMacFuseVSMFS;
 import de.dimm.vsm.net.StoragePoolWrapper;
 import de.dimm.vsm.vfs.IBufferedEventProcessor;
 import java.net.InetAddress;
@@ -71,7 +72,8 @@ public class MountVSMFS
             if (use_fuse)
             {
                 if (OSValidator.isMac())
-                    filesystem = new MacFuseVSMFS(sp_handler, drive, log, fuse_args, rdwr );
+                    filesystem = new VfsMacFuseVSMFS(sp_handler, drive, log, fuse_args, rdwr );
+//                    filesystem = new MacFuseVSMFS(sp_handler, drive, log, fuse_args, rdwr );
                 else
                     filesystem = new FuseVSMFS(sp_handler, drive, log, fuse_args );
             }

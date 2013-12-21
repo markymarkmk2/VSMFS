@@ -4,11 +4,12 @@
  */
 package de.dimm.vsm.fsutils;
 
+import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.net.interfaces.FileHandle;
-import de.dimm.vsm.vfs.IVfsEventProcessor;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.sql.SQLException;
 
 /**
@@ -95,6 +96,13 @@ public class VirtualRemoteFileHandle implements FileHandle
     public boolean exists()
     {
         return file.exists();
-    }       
+    }    
+
+    @Override
+    public void writeBlock( String hashValue, byte[] data, int length, long offset ) throws IOException, PathResolveException, PoolReadOnlyException, UnsupportedEncodingException, SQLException
+    {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
     
 }

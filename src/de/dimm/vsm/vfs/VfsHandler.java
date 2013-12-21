@@ -13,14 +13,9 @@ import de.dimm.vsm.records.FileSystemElemNode;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
-/**
- *
- * @author root
- */
+
 public class VfsHandler implements IVfsHandler
 {
     RemoteStoragePoolHandler remoteFSApi;
@@ -28,8 +23,8 @@ public class VfsHandler implements IVfsHandler
     private static final long DIR_HANDLE_OFFSET = 0x40000000;
     
     //Map<String,IVfsFsEntry> entryMap;
-    List<IVfsFsEntry> openList;
-    List<IVfsFsEntry> openDirs;
+    List<OpenVfsFsEntry> openList;
+    List<OpenVfsFsEntry> openDirs;
 
     public VfsHandler( RemoteStoragePoolHandler remoteFSApi) throws SQLException
     {
@@ -68,6 +63,11 @@ public class VfsHandler implements IVfsHandler
                 {
                     IVfsDir cdir = (IVfsDir)act;
                     act = cdir.getChild(dpath);
+                    if (act == null)
+                    {
+                        ret = null;
+                        break;
+                    }
                     // Last entry in Pathlist?
                     if (i == pathArr.length - 1)
                         ret = act;
@@ -105,7 +105,7 @@ public class VfsHandler implements IVfsHandler
     @Override
     public void closeAll()
     {
-        for (IVfsFsEntry entry : openList)
+        for (OpenVfsFsEntry entry : openList)
         {
             try
             {
@@ -121,9 +121,9 @@ public class VfsHandler implements IVfsHandler
     }
 
     @Override
-    public void closeEntry(IVfsFsEntry entry)
+    public void closeEntry(OpenVfsFsEntry entry)
     {
-        if (entry.isFile()) 
+        if (entry.getEntry().isFile()) 
         {
             if (!openList.remove( entry))
                 VSMFSLogger.getLog().error( "Objekt war nicht in Liste :"  + entry.toString());
@@ -140,7 +140,7 @@ public class VfsHandler implements IVfsHandler
         {
             if (!openDirs.remove( entry))
                 VSMFSLogger.getLog().error( "Objekt war nicht in Liste :"  + entry.toString());
-        }
+        }        
     }
 
     @Override
@@ -163,10 +163,15 @@ public class VfsHandler implements IVfsHandler
     @Override
     public long openEntryForWrite( IVfsFsEntry entry ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
-        long handleNo = remoteFSApi.open_file_handle_no( entry.getNode(), true);
-        entry.setHandleNo(handleNo);
-        openList.add( entry );
-        VSMFSLogger.getLog().debug("openEntryForWrite " + handleNo + " " + entry.toString());
+        
+//        long handleNo = remoteFSApi.open_file_handle_no( entry.getNode(), true);
+//        entry.setHandleNo(handleNo);
+        OpenVfsFsEntry oe = new OpenVfsFsEntry(entry, true);
+        long handleNo= oe.getHandleNo();
+        long vfsHandleNo = oe.getVfsHandle();
+        openList.add( oe );
+        VSMFSLogger.getLog().debug("openEntryForWrite " + handleNo + " / " + vfsHandleNo + " " + entry.toString());
+//        return entry.getGUID();
         return handleNo;
     }
 
@@ -188,29 +193,47 @@ public class VfsHandler implements IVfsHandler
     public long openEntry(IVfsFsEntry entry ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {   
         long handleNo;
+
         if (entry.isFile())
         {
-            handleNo = remoteFSApi.open_file_handle_no( entry.getNode(), false);
-            entry.setHandleNo(handleNo);
-            openList.add( entry );
+//            handleNo = remoteFSApi.open_file_handle_no( entry.getNode(), false);
+//            entry.setHandleNo(handleNo);
+            OpenVfsFsEntry oe = new OpenVfsFsEntry(entry, false);
+            handleNo = oe.getHandleNo();
+            openList.add( oe );
         }
         else
-        {
-            openDirs.add( entry );
+        {            
             handleNo = DIR_HANDLE_OFFSET + openDirs.size();
-            
+            OpenVfsFsEntry oe = new OpenVfsFsEntry(entry, handleNo);
+            openDirs.add( oe );        
         }
-        VSMFSLogger.getLog().debug("openEntry " + handleNo + " " + entry.toString());
+        VSMFSLogger.getLog().debug("openEntry opened UID " + entry.getGUID() + " HDL:" + handleNo + " " + entry.toString());
         return handleNo;
+        //return entry.getGUID();
     }
 
     @Override
-    public IVfsFsEntry getEntryByHandle( long fh )
+    public OpenVfsFsEntry getEntryByHandle( long fh )
     {
-        for (IVfsFsEntry entry : openList)
+        logFileEntries();
+        if (fh >= DIR_HANDLE_OFFSET)
         {
-            if (entry.getHandleNo() == fh)
-                return entry;
+            for (OpenVfsFsEntry entry : openDirs)
+            {
+                if (entry.getHandleNo() == fh)
+                //if (entry.getGUID() == fh)
+                    return entry;
+            }
+        }
+        else
+        {
+            for (OpenVfsFsEntry entry : openList)
+            {
+                if (entry.getHandleNo() == fh)
+//                if (entry.getGUID() == fh)
+                    return entry;
+            }
         }
         return null;
     }
@@ -299,6 +322,20 @@ public class VfsHandler implements IVfsHandler
 //            }
 //        }
 //    }
+
+    int lastOpenListSize = 0;
+    private void logFileEntries()
+    {
+        if (lastOpenListSize != openList.size())
+        {
+            VSMFSLogger.getLog().debug("open Files: " + openList.size());
+            for (OpenVfsFsEntry entry : openList)
+            {
+                VSMFSLogger.getLog().debug("Entry " + entry.getHandleNo() + ": " + entry.getEntry().toString());
+            }
+            lastOpenListSize = openList.size();
+        }
+    }
 
     
 }

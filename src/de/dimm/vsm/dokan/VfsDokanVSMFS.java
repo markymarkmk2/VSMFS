@@ -1,33 +1,10 @@
-/*
-The MIT License
 
-Copyright (C) 2008 Yu Kobayashi http://yukoba.accelart.jp/
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
- */
 package de.dimm.vsm.dokan;
 
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.Utilities.WinFileUtilities;
 import de.dimm.vsm.VSMFSLogger;
-import de.dimm.vsm.fsutils.FSENode;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.fsutils.ShutdownHook;
 import de.dimm.vsm.fsutils.Utils;
@@ -36,6 +13,7 @@ import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.vfs.IVfsDir;
 import de.dimm.vsm.vfs.IVfsFsEntry;
 import de.dimm.vsm.vfs.IVfsHandler;
+import de.dimm.vsm.vfs.OpenVfsFsEntry;
 import de.dimm.vsm.vfs.VfsHandler;
 import java.sql.SQLException;
 import net.decasdev.dokan.DokanOptions;
@@ -51,7 +29,11 @@ import static net.decasdev.dokan.WinError.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import net.decasdev.dokan.ByHandleFileInformation;
 import net.decasdev.dokan.Dokan;
 import net.decasdev.dokan.DokanDiskFreeSpace;
@@ -208,10 +190,11 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         IVfsFsEntry entry = null;
         
         // Ask for existing node only it can exist
-        if (creationDisposition != CREATE_NEW)
-        {
-            entry = resolveNode(fileName);
-        }        
+        entry = resolveNode(fileName);
+//        if (creationDisposition != CREATE_NEW)
+//        {
+//            
+//        }        
 
         if (entry != null)
         {
@@ -222,18 +205,27 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                 case OPEN_ALWAYS:
 
                 case OPEN_EXISTING:
-                {                    
+                {                                                 
                     if (entry.isDirectory())
                     {
-                       log.error( "CreateFile with Dir called");
-                       throw new DokanOperationException(ERROR_ACCESS_DENIED);
+                        try
+                        {
+                            long handle = vfsHandler.openEntry(entry);                            
+                            return handle; //getNextHandle();
+                        }
+                        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException iOException)
+                        {
+                            throw new DokanOperationException(ERROR_ACCESS_DENIED);
+                        }
+//                       log.error( "CreateFile with Dir called");
+//                       throw new DokanOperationException(ERROR_ACCESS_DENIED);
                     }
 
                     long handle;
                     try
                     {
                         if (creationDisposition == OPEN_ALWAYS)
-                        {
+                        {                            
                             handle = vfsHandler.openEntryForWrite( entry );
                         }
                         else                        
@@ -243,6 +235,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                     }
                     catch (IOException | SQLException | PoolReadOnlyException | PathResolveException exception)
                     {
+                        log.debug("access denied: " + path, exception);
                         throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
                     }
                     
@@ -252,6 +245,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                 case CREATE_ALWAYS:
                 case TRUNCATE_EXISTING:
                 {
+                    flushDirListCache();
                     if (entry.isDirectory())
                     {
                        log.error( "CreateFile with Dir called");
@@ -265,13 +259,13 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                                 throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
                         
                         if (creationDisposition == TRUNCATE_EXISTING)
-                            entry.truncate(0);
+                            entry.truncate(handle, 0);
 
                         //closeFileChannel(mf.getNode().getIdx());
                         return handle;
                     }
 
-                    catch (Exception e)
+                    catch (IOException | SQLException | PoolReadOnlyException | PathResolveException | DokanOperationException e)
                     {
                         log.error("unable to clear file "  + entry.getPath(), e);
                         throw new DokanOperationException( WinError.ERROR_ACCESS_DENIED);
@@ -281,6 +275,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         }
         else
         {
+            flushDirListCache();            
             switch (creationDisposition)
             {
                 case CREATE_NEW:
@@ -299,14 +294,17 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                             throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
                         return handle;
                     }
-                    catch (Exception e)
+                    catch (IOException | SQLException | PathResolveException | PoolReadOnlyException | DokanOperationException e)
                     {
                         log.error("unable to create file " + path, e);
                         throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
                     }                    
                 case OPEN_EXISTING:
                 case TRUNCATE_EXISTING:
+                {
+                    log.debug("not found: " + path);
                     throw new DokanOperationException(ERROR_FILE_NOT_FOUND);
+                }
             }
         }
         throw new DokanOperationException(1);
@@ -347,10 +345,15 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             String pathName = WinFileUtilities.win_to_sys_path(winPathName);
             vfsHandler.mkdir( pathName, 0 );                     
         }
-        catch (Exception iOException)
+        catch (PoolReadOnlyException exc)
+        {
+            log.error( "PoolReadOnlyException in onCreateDirectory: " + exc.getMessage() );
+            throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
+        }
+        catch (IOException | SQLException | PathResolveException  iOException)
         {
             log.error( "Exception in onCreateDirectory: " + iOException.getMessage() );
-            throw new DokanOperationException(WinError.ERROR_PATH_NOT_FOUND);
+            throw new DokanOperationException(WinError.ERROR_ACCESS_DENIED);
         }
     }
 
@@ -361,7 +364,11 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onClose] " + winPath + " " +  arg1.toString());
 
-        IVfsFsEntry f = resolveNodeByHandleMustExist( arg1.handle);
+        // Kein Gültiger Handle -> Open is failed
+        if (arg1.handle == 0)
+            return;
+        
+        OpenVfsFsEntry f = resolveNodeOpenedFile(winPath, arg1);
         vfsHandler.closeEntry( f );
         
         if (f.isDeleteOnClose())
@@ -369,7 +376,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             log("[isDeleteOnClose] " + winPath );
             try
             {
-                if (!vfsHandler.unlink( f ))
+                if (!vfsHandler.unlink( f.getEntry() ))
                 {
                     log.debug("unable to delete file/folder " + winPath);
                     throw new DokanOperationException(WinError.ERROR_WRITE_FAULT);
@@ -385,7 +392,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                 log.warn("unable to delete file/folder: " + winPath + ": " + exc.toString());
                 throw new DokanOperationException(ERROR_WRITE_FAULT);
             }                
-        }           
+        }             
     }
 
     @Override
@@ -393,20 +400,20 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onReadFile] " + buf.capacity() + " at " + offset + " from " + fileName +  " " + arg3.toString());        
         
-        IVfsFsEntry entry = resolveNodeByHandleMustExist( arg3.handle);
+        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
         try
-        {
+        {            
             // Catch empty read
-            if (offset == entry.getSize())
+            if (offset == entry.getEntry().getSize())
             {
                  log("[onReadFile] read " + 0);
                  return 0;
             }
              
             // Catch wrong read pos
-            if (offset > entry.getSize())
+            if (offset > entry.getEntry().getSize())
             {
-                log("read offset is too large: " + offset + " filelen:" + entry.getSize());            
+                log("read offset is too large: " + offset + " filelen:" + entry.getEntry().getSize());            
                 return -1;
             }
 
@@ -422,11 +429,11 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             buf.put(b, 0, b.length);            
             return b.length;
         }
-        catch (Exception e)
+        catch (IOException | SQLException | DokanOperationException | PoolReadOnlyException |PathResolveException  e)
         {
             log.error("unable to read file " + fileName, e);
             throw new DokanOperationException(ERROR_READ_FAULT);
-        }
+        }        
     }
 
     @Override
@@ -436,14 +443,14 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         
         byte[] b = new byte[buf.capacity()];
         buf.get(b);
-        IVfsFsEntry entry = resolveNodeByHandleMustExist( arg3.handle);
+        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
 
         try
         {            
             entry.write(offset, b.length, b);            
             log("wrote " + b.length + " at " + offset);            
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException e)
         {
             log.error("unable to write to file" + fileName, e);
             throw new DokanOperationException(ERROR_WRITE_FAULT);
@@ -457,31 +464,30 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onSetEndOfFile] len " + length + " " + fileName  + " " + arg2.toString());
        
-        IVfsFsEntry entry = resolveNodeByHandleMustExist( arg2.handle);
+        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg2);
         try
         {
             entry.truncate(length);            
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException |PathResolveException e)
         {
-            log.error("Unable to set length  of " + fileName + " to " + length);
+            log.error("Unable to set length  of " + fileName + " to " + length, e);
             throw new DokanOperationException(ERROR_WRITE_FAULT);
-        }
+        }       
     }
-
+        
     @Override
     public void onFlushFileBuffers( String fileName, DokanFileInfo arg1 )
             throws DokanOperationException
-    {
-        
-        IVfsFsEntry entry = resolveNodeByHandleMustExist( arg1.handle);
+    {                
+        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg1);
         try
         {
             entry.flush();            
         }
         catch (Exception e)
         {
-            log.error("Unable to flush " + fileName );
+            log.error("Unable to flush " + fileName, e );
             throw new DokanOperationException(ERROR_WRITE_FAULT);
         }
     }
@@ -502,7 +508,12 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         }
         else
         {
-            IVfsFsEntry entry = resolveNodeFileMustExist( fileName);
+            IVfsFsEntry entry = dirListCacheLookUp(fileName);
+            if (entry == null)
+            {
+                OpenVfsFsEntry oentry = resolveNodeOpenedFile( fileName, arg1);
+                entry = oentry.getEntry();
+            }
           
             long atime = FileTime.toWinFileTime( entry.getAtimeMs() );
             long ctime = FileTime.toWinFileTime(entry.getCtimeMs() );
@@ -527,11 +538,15 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onCleanup] " + winPath  + " " + arg1.toString());
    
-        IVfsFsEntry entry = resolveNodeByHandleMustExist( arg1.handle);
+        // Kein Gültiger Handle -> Open is failed
+        if (arg1.handle == 0)
+            return;
+        
+        //OpenVfsFsEntry oentry = resolveNodeOpenedFile(winPath, arg1);
         
         try
         {
-            vfsHandler.closeEntry( entry );
+//            vfsHandler.closeEntry( entry );
         }
         catch (Exception iOException)
         {
@@ -539,20 +554,106 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             throw new DokanOperationException( ERROR_WRITE_FAULT );
         }                    
     }
+    
+    
 
+    class DirListCacheEntry
+    {
+        long ts;
+        List<IVfsFsEntry> data;
+        Win32FindData[] wdata;
+
+        public DirListCacheEntry( List<IVfsFsEntry> data )
+        {
+            this.ts = System.currentTimeMillis();
+            this.data = data;
+        }
+        
+        boolean isExpired()
+        {
+            return ((System.currentTimeMillis() - ts) > 15000);
+        }
+
+        public void setWdata( Win32FindData[] wdata )
+        {
+            this.wdata = wdata;
+        }
+
+        public Win32FindData[] getWdata()
+        {
+            return wdata;
+        }
+        
+    }
+            
+    Map<String,DirListCacheEntry> dirCache = new ConcurrentHashMap<>();
+    
+    void addDirListCache( String path,List<IVfsFsEntry> data)
+    {
+        for (Map.Entry<String, DirListCacheEntry> entry : dirCache.entrySet())
+        {
+            String string = entry.getKey();
+            DirListCacheEntry dirListCacheEntry = entry.getValue();
+        
+            if (dirListCacheEntry.isExpired())
+                dirCache.remove(string);
+        }
+        dirCache.put(path, new DirListCacheEntry(data));
+    }
+    void flushDirListCache()
+    {
+        dirCache.clear();
+    }
+    IVfsFsEntry dirListCacheLookUp( String filePath)
+    {
+        int idx = filePath.lastIndexOf('\\');
+        // Root?
+        if (idx == filePath.length())
+            return null;
+        
+        String parentPath = filePath.substring(0, idx);
+        
+        String fileName = filePath.substring(idx + 1);
+        
+        DirListCacheEntry dlce = dirCache.get(parentPath);
+        if (dlce != null)
+        {
+            for (int i = 0; i < dlce.data.size(); i++)
+            {
+                IVfsFsEntry entry = dlce.data.get(i);
+                if (entry.getNode().getName().equals(fileName))
+                    return entry;
+                
+            }            
+        }
+        return null;        
+    }
+    
 
     @Override
     public Win32FindData[] onFindFiles( String pathName, DokanFileInfo arg1 ) throws DokanOperationException
     {
-        log("[onFindFiles] " + pathName  + " " + arg1.toString());
-        FSENode f = null;
-        IVfsFsEntry entry = resolveNodeDirMustExist( pathName);
+        log("[onFindFiles] " + pathName  + " " + arg1.toString());                        
+        IVfsFsEntry entry = resolveNodeDirMustExist( pathName);        
         try
         {
             Win32FindData[] cache_files;
 
-            IVfsDir dir = (IVfsDir)entry;              
-            List<IVfsFsEntry> list = dir.getChildren();
+            IVfsDir dir = (IVfsDir)entry;  
+            List<IVfsFsEntry> list;
+            DirListCacheEntry dlce = dirCache.get(pathName);
+            if (dlce != null && !dlce.isExpired())
+            {
+                return dlce.getWdata();
+            }
+            else
+            {
+                if (dir.isRealized())
+                    dir.unrealize();
+                list = dir.listChildren();
+                addDirListCache(pathName, list);
+                dlce = dirCache.get(pathName);
+            }
             List<Win32FindData>cacheFileList = new ArrayList<>();
 
             for (int i = 0; i < list.size(); i++)
@@ -574,11 +675,11 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 
                 cacheFileList.add(d);
 
-                log("[onFindFiles] " + d.toString());
+                //log("[onFindFiles] " + d.toString());
             }
             // Add . and ..
             int fileAttribute = FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_DIRECTORY;
-            RemoteFSElem cf =  f.getNode();
+            RemoteFSElem cf =  entry.getNode();
             Win32FindData d = new Win32FindData(fileAttribute,
                         FileTime.toWinFileTime( cf.getCtimeMs()),
                         FileTime.toWinFileTime( cf.getAtimeMs()),
@@ -598,10 +699,11 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                 cacheFileList.add(d);
             }
             cache_files = cacheFileList.toArray(new Win32FindData[0]);
-
+            dlce.setWdata(cache_files);
+            
             return cache_files;
         }
-        catch (Exception e)
+        catch (IOException | SQLException e)
         {
             log.error("unable to list files for " + pathName, e);
             throw new DokanOperationException(WinError.ERROR_DIRECTORY);
@@ -633,13 +735,18 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     public void onSetFileTime( String fileName, long ctime, long atime, long mtime, DokanFileInfo arg4 ) throws DokanOperationException
     {
         log("[onSetFileTime] " + fileName + " " + arg4.toString() + " C: " + ctime + " A: " + atime + " M: " + mtime);
-        IVfsFsEntry entry =  resolveNodeFileMustExist( fileName);
+        if (ctime == 0 && atime == 0 && mtime == 0)
+        {
+            log("[onSetFileTime] skipped");
+            return;
+        }
+        OpenVfsFsEntry entry =  resolveNodeOpenedFile( fileName, arg4);
         
         try
         {            
             entry.setMsTimes(FileTime.toJavaTime(ctime), FileTime.toJavaTime(atime), FileTime.toJavaTime(mtime));
         }
-        catch (Exception exception)
+        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException exception)
         {
             log.warn("unable to onSetFileTime file " + fileName);
             throw new DokanOperationException(ERROR_FILE_NOT_FOUND);
@@ -650,8 +757,9 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     public void onDeleteFile( String fileName, DokanFileInfo arg1 ) throws DokanOperationException
     {
         log("[onDeleteFile] " + fileName);
-        IVfsFsEntry entry =  resolveNodeFileMustExist( fileName );
-
+        OpenVfsFsEntry oentry = resolveNodeOpenedFile(fileName, arg1);
+         
+//        IVfsFsEntry entry =  resolveNodeFileMustExist( fileName );
         // You should not delete file on DeleteFile or DeleteDirectory.
 	// When DeleteFile or DeleteDirectory, you must check whether
 	// you can delete the file or not, and return 0 (when you can delete it)
@@ -662,20 +770,20 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 	// file in Close.           
         try
         {
-            if (remoteFSApi.isReadOnly( arg1.handle))
+            if (oentry.isReadOnly())
             {
                 log("[onDeleteFile] " + fileName + " failed with read only");
                 throw new DokanOperationException(ERROR_SHARING_VIOLATION);                
             }
         }
-        catch (IOException | SQLException iOException)
+        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException iOException)
         {
             log("[onDeleteFile] " + fileName + " failed with " + iOException.getMessage());
             throw new DokanOperationException(ERROR_ACCESS_DENIED);
         }
         
         log("[onDeleteFile] " + fileName + " succeeded");
-        entry.setDeleteOnClose( true );
+        oentry.setDeleteOnClose( true );
     }
 
     @Override
@@ -691,35 +799,36 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 	// FileInfo->DeleteOnClose set TRUE and you have to delete the
 	// file in Close.      
         
-        IVfsFsEntry entry =  resolveNodeDirMustExist( path );
+        OpenVfsFsEntry oentry = resolveNodeOpenedFile(path, arg1);
 
         try
         {
-            if (remoteFSApi.isReadOnly( entry.getNode().getIdx()))
+            if (oentry.isReadOnly())
             {
                 log("[onDeleteDirectory] " + path + " failed with read only");
                 throw new DokanOperationException(ERROR_SHARING_VIOLATION);                
             }
 
-            List<RemoteFSElem> list = remoteFSApi.get_child_nodes(entry.getNode());
+            List<RemoteFSElem> list = remoteFSApi.get_child_nodes(oentry.getEntry().getNode());
             if (!list.isEmpty())
             {
                 log("[onDeleteDirectory] " + path + " failed with not empty");
                 throw new DokanOperationException(WinError.ERROR_DIR_NOT_EMPTY);
             }
         }
-        catch (SQLException | IOException sQLException)
+        catch (SQLException | IOException | PoolReadOnlyException | PathResolveException sQLException)
         {
             log("[onDeleteDirectory] " + path + " failed with " + sQLException.getMessage());
             throw new DokanOperationException(ERROR_ACCESS_DENIED);
         }
         log("[onDeleteDirectory] " + path + " succeeded");
-        entry.setDeleteOnClose( true );        
+        oentry.setDeleteOnClose( true );        
     }
 
     @Override
     public void onMoveFile( String winFrom, String winTo, boolean replaceExisiting, DokanFileInfo arg3 ) throws DokanOperationException
     {
+        flushDirListCache();
         log("==> [onMoveFile] " + winFrom + " -> " + winTo + ", replaceExisiting = " + replaceExisiting);
 
         try
@@ -728,7 +837,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
            String to = WinFileUtilities.win_to_sys_path(winTo);
            vfsHandler.moveNode( from, to );
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException e)
         {
             log.error("unable to move file " + winFrom + " to " + winTo, e);
             throw new DokanOperationException(ERROR_FILE_EXISTS);
@@ -788,7 +897,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         String path = WinFileUtilities.win_to_sys_path(winpath);
         //log.debug("Resolved path " + winpath + " to " + path);
         
-        IVfsFsEntry entry = null;
+        IVfsFsEntry entry;
         try
         {
             entry = vfsHandler.getEntry( path );
@@ -799,15 +908,27 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         }
         return entry;
     }
-    private IVfsFsEntry resolveNodeFileMustExist( String winpath ) throws DokanOperationException
+    private OpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws DokanOperationException
     {
-        IVfsFsEntry entry = resolveNode( winpath );
-        if (entry == null)
+        String path = WinFileUtilities.win_to_sys_path(winpath);
+         try
         {
-            log("[resolveNodeFile] " + winpath + " failed with not found");
-            throw new DokanOperationException(ERROR_FILE_NOT_FOUND);
+            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);
+            if (entry == null) {
+                throw new IOException("Node not open " + path);
+//                entry = vfsHandler.getEntry( path );
+//                if (entry == null) {
+//                    throw new IOException("Node not found " + path);
+//                }
+//                entry.open(true);
+            }
+            return entry;
         }
-        return entry;
+        catch (IOException /*| SQLException | PoolReadOnlyException | PathResolveException*/ e)
+        {
+            log("[resolveNodeFile] " + winpath + " failed with not found ", e);
+            throw new DokanOperationException(ERROR_FILE_NOT_FOUND);
+        }      
     }  
     private IVfsFsEntry resolveNodeDirMustExist( String winpath ) throws DokanOperationException
     {
@@ -819,6 +940,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         }
         return entry;
     }  
+    /*
     private IVfsFsEntry resolveNodeByHandleMustExist( long handleNo) throws DokanOperationException
     {
         IVfsFsEntry entry = vfsHandler.getEntryByHandle( handleNo);
@@ -828,12 +950,17 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             throw new DokanOperationException(WinError.ERROR_FILE_NOT_FOUND);
         }
         return entry;
-    }
+    }*/
 
     private void log( String string )
     {
         //logs( string);
          log.debug(string);
+    }
+    private void log( String string, Exception e )
+    {
+        //logs( string);
+         log.error(string, e);
     }
 
     @Override

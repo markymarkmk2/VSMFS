@@ -4,10 +4,12 @@
  */
 package de.dimm.vsm.fsutils;
 
+import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.net.interfaces.FileHandle;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.sql.SQLException;
 
 /**
@@ -101,5 +103,12 @@ public class RemoteFileHandle implements FileHandle
     {
         return remoteFSApi.length(serverFhIdx) >= 0;
     }
+
+    @Override
+    public void writeBlock( String hashValue, byte[] data, int length, long offset ) throws IOException, PathResolveException, PoolReadOnlyException, UnsupportedEncodingException, SQLException
+    {
+        remoteFSApi.writeBlock(offset, hashValue, data, length, offset);
+    }
+    
 
 }

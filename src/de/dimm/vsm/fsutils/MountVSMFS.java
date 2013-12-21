@@ -1,10 +1,9 @@
 package de.dimm.vsm.fsutils;
 
 import de.dimm.vsm.fuse.FuseVSMFS;
-import de.dimm.vsm.dokan.DokanVSMFS;
 import de.dimm.vsm.VSMFSLogger;
+import de.dimm.vsm.dokan.VfsDokanVSMFS;
 import de.dimm.vsm.fsutils.utils.OSValidator;
-import de.dimm.vsm.fuse.MacFuseVSMFS;
 import de.dimm.vsm.fuse.VfsMacFuseVSMFS;
 import de.dimm.vsm.net.StoragePoolWrapper;
 import de.dimm.vsm.vfs.IBufferedEventProcessor;
@@ -79,7 +78,8 @@ public class MountVSMFS
             }
             else
             {                
-                filesystem = new DokanVSMFS(sp_handler, processor, drive, log);
+//                filesystem = new DokanVSMFS(sp_handler, processor, drive, log);
+                filesystem = new VfsDokanVSMFS(sp_handler, /*processor, */drive, log);
             }
 
             Thread thr = new Thread(new Runnable() {

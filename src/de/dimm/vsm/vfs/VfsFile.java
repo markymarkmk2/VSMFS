@@ -4,6 +4,7 @@
  */
 package de.dimm.vsm.vfs;
 
+import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.VSMFSLogger;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
@@ -19,12 +20,15 @@ import java.util.List;
 public class VfsFile implements IVfsFile
 {
 
-    private boolean deleteOnClose;
+    private boolean newFile;
     private boolean streamPath;
     protected String path;
-    private long handleNo = -1;
+    
     protected RemoteFSElem elem;
     protected RemoteStoragePoolHandler remoteFSApi;
+    protected boolean updatedFileSize;
+    
+    
 
     IVfsDir parent;
     
@@ -38,22 +42,35 @@ public class VfsFile implements IVfsFile
     
     public static VfsFile createFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi)
     {
-        return new VfsBufferedFile( parent, path, elem, remoteFSApi );
+        VfsFile ret = new VfsBufferedFile( parent, path, elem, remoteFSApi );
+        ret.setNewFile(true);
+        return ret;
 //        return new VfsFile( path, elem, remoteFSApi );
     }
-        
-    
-    @Override
-    public boolean isDeleteOnClose()
+
+    public boolean isNewFile()
     {
-        return deleteOnClose;
+        return newFile;
     }
 
-    @Override
-    public void setDeleteOnClose( boolean deleteOnClose )
+   
+    
+
+    public void setNewFile( boolean newFile )
     {
-        this.deleteOnClose = deleteOnClose;
+        this.newFile = newFile;
     }
+
+    public void setUpdatedFileSize( boolean updatedFileSize )
+    {
+        this.updatedFileSize = updatedFileSize;
+    }
+
+    public boolean isUpdatedFileSize()
+    {
+        return updatedFileSize;
+    }
+    
 
     @Override
     public boolean isStreamPath()
@@ -128,24 +145,24 @@ public class VfsFile implements IVfsFile
     }
 
     @Override
-    public void setPosixMode( int mode ) throws IOException, SQLException, PoolReadOnlyException
+    public void setPosixMode( long handleNo, int mode ) throws IOException, SQLException, PoolReadOnlyException
     {
         elem.setPosixData( mode, elem.getUid(), elem.getGid(), elem.getUidName(), elem.getGidName() );        
-        updateElem();
+        updateElem(handleNo);
     }
 
     @Override
-    public void setOwner( int uid ) throws IOException, SQLException, PoolReadOnlyException
+    public void setOwner( long handleNo, int uid ) throws IOException, SQLException, PoolReadOnlyException
     {
         elem.setPosixData( elem.getPosixMode(), uid, elem.getGid(), elem.getUidName(), elem.getGidName() );
-        updateElem();
+        updateElem(handleNo);
     }
 
     @Override
-    public void setGroup( int gid ) throws IOException, SQLException, PoolReadOnlyException
+    public void setGroup( long handleNo, int gid ) throws IOException, SQLException, PoolReadOnlyException
     {
         elem.setPosixData( elem.getPosixMode(), elem.getUid(), gid, elem.getUidName(), elem.getGidName() );
-        updateElem();
+        updateElem(handleNo);
     }
 
     @Override
@@ -203,25 +220,24 @@ public class VfsFile implements IVfsFile
     }
 
     @Override
-    public void truncate( long size ) throws IOException, SQLException, PoolReadOnlyException
+    public void truncate( long handleNo, long size ) throws IOException, SQLException, PoolReadOnlyException
     {
-        checkValidHandle();
         remoteFSApi.truncateFile( handleNo, size);
         getNode().setDataSize( size );
         touchMTime();
     }
 
     @Override
-    public void setLastAccessed( long l ) throws IOException, SQLException, PoolReadOnlyException
+    public void setLastAccessed( long handleNo, long l ) throws IOException, SQLException, PoolReadOnlyException
     {
         remoteFSApi.set_ms_times(handleNo, elem.getCtimeMs(), l, elem.getMtimeMs() );
         elem.setAtimeMs(l);
     }
 
     @Override
-    public void setLastModified( long l ) throws IOException, SQLException, PoolReadOnlyException
+    public void setLastModified( long handleNo, long l ) throws IOException, SQLException, PoolReadOnlyException
     {
-        remoteFSApi.set_ms_times(handleNo, elem.getCtimeMs(), elem.getAtimeMs(), l );
+        remoteFSApi.set_ms_times( handleNo, elem.getCtimeMs(), elem.getAtimeMs(), l );
         elem.setMtimeMs(l);
     }
 
@@ -256,31 +272,43 @@ public class VfsFile implements IVfsFile
     }
 
     @Override
-    public void setMsTimes( long c, long a, long m ) throws IOException, SQLException, PoolReadOnlyException
+    public void setMsTimes( long handleNo, long c, long a, long m ) throws IOException, SQLException, PoolReadOnlyException
     {
         remoteFSApi.set_ms_times(handleNo, c, a, m );
-        elem.setCtimeMs(c);
-        elem.setAtimeMs(a);
-        elem.setMtimeMs(m);
+        if (c != 0)
+            elem.setCtimeMs(c);
+        if (a != 0)
+            elem.setAtimeMs(a);
+        if (m != 0)
+            elem.setMtimeMs(m);
     }
 
     @Override
-    public void write( long offset, int len, byte[] data ) throws IOException, SQLException, PoolReadOnlyException
+    public void write( long handleNo, long offset, int len, byte[] data ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
-        checkValidHandle();
+        
         remoteFSApi.writeFile( handleNo, data, len, offset);
     }
-
+    
     @Override
-    public byte[] read( long offset, int len) throws IOException, SQLException
+    public void writeBlock( long handleNo, long offset, int len, String hash, byte[] data ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
-        checkValidHandle();
+        
+        remoteFSApi.writeBlock( handleNo, hash, data, len, offset);
+    }
+
+    
+    @Override
+    public byte[] read( long handleNo, long offset, int len) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        
         return remoteFSApi.read( handleNo, len, offset);        
     }
 
     @Override
-    public void flush() throws IOException
+    public void flush(long handleNo ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
+        
         remoteFSApi.force( handleNo, false );
     }
 
@@ -296,21 +324,17 @@ public class VfsFile implements IVfsFile
         // TODO
     }
 
-    private void updateElem()  throws IOException, SQLException, PoolReadOnlyException
+    private void updateElem(long handleNo )  throws IOException, SQLException, PoolReadOnlyException
     {
         remoteFSApi.getApi().updateAttributes(remoteFSApi.getWrapper(), handleNo, elem);
     }
 
-    private void checkValidHandle() throws IOException
-    {
-        if (handleNo < 0)
-            throw new IOException( "Datei "+ path + " ist nicht geoeffnet");
-    }
+ 
 
     @Override
-    public void close() throws IOException
+    public void close(long handleNo ) throws IOException
     {
-        checkValidHandle();
+        //checkValidHandle();
         
         remoteFSApi.close( handleNo );
         handleNo = -1;
@@ -322,16 +346,7 @@ public class VfsFile implements IVfsFile
         return "File " + getPath();
     }
 
-    public long getHandleNo()
-    {
-        return handleNo;
-    }
-
-    @Override
-    public void setHandleNo( long handleNo )
-    {
-        this.handleNo = handleNo;
-    }
+   
     public void debug(String s)
     {
         VSMFSLogger.getLog().debug( toString() + " debug: " + s);
@@ -354,13 +369,39 @@ public class VfsFile implements IVfsFile
         {
             parent.removeChild(this);
         }
-    }
-    
+    }    
     
     protected void touchMTime()
     {
         getNode().setMtimeMs( System.currentTimeMillis());
     }
+
+    @Override
+    public long open(  boolean forWrite ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        
+        long handleNo = remoteFSApi.open_file_handle_no( getNode(), forWrite);        
+        return handleNo;
+    }
     
+    void checkValidOpen( long handleNo, boolean forWrite) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        if (!isValidHandle(handleNo))
+        {
+            throw new IOException("Nicht offen Fehler fuer " + getNode().getPath());            
+        }              
+    }
+
+    private boolean isValidHandle( long handleNo )
+    {
+        return handleNo >= 0;
+    }
+
+    @Override
+    public boolean isReadOnly( long vfsHandle ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        return remoteFSApi.isReadOnly(vfsHandle);
+    }
+       
     
 }

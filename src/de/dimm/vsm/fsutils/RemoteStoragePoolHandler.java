@@ -13,7 +13,6 @@ import de.dimm.vsm.net.StoragePoolWrapper;
 import de.dimm.vsm.net.interfaces.FileHandle;
 import de.dimm.vsm.net.interfaces.RemoteFSApi;
 import de.dimm.vsm.net.interfaces.StoragePoolHandlerInterface;
-import de.dimm.vsm.records.FileSystemElemNode;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -501,6 +500,38 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
         {
             lock();
             api.writeFile(poolWrapper, idx, b, length, offset);
+        }
+        finally
+        {
+            unlock();
+        }
+
+    }
+    @Override
+    public void writeBlock( long idx, String hash, byte[] b, int length, long offset ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
+    {
+        l("RealwriteBlock at " + offset + " len " + length);
+        try
+        {
+            lock();
+            if (!api.checkBlock(poolWrapper,  hash))
+            {
+                l( "Write Block with data " + offset + " len " + length);   
+                api.writeBlock(poolWrapper, idx, hash, b, length, offset);
+            }
+            else
+            {
+                try
+                {
+                    l( "Write Block with hash without data " + offset + " len " + length);   
+                    api.writeBlock(poolWrapper, idx, hash, null, length, offset);
+                }
+                catch (IOException iOException)
+                {
+                    l("Retry schreiben von Block: " + iOException.getMessage());
+                    api.writeBlock(poolWrapper, idx, hash, b, length, offset);                    
+                }
+            }
         }
         finally
         {

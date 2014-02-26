@@ -25,6 +25,7 @@ public class VfsHandler implements IVfsHandler
     //Map<String,IVfsFsEntry> entryMap;
     List<OpenVfsFsEntry> openList;
     List<OpenVfsFsEntry> openDirs;
+    VfsWriteBlockRunner blockRunner;
 
     public VfsHandler( RemoteStoragePoolHandler remoteFSApi) throws SQLException
     {
@@ -36,6 +37,7 @@ public class VfsHandler implements IVfsHandler
         openList = new ArrayList<>();
         openDirs = new ArrayList<>();
         //addToEntryMap(rootDir);
+        blockRunner = new VfsWriteBlockRunner(remoteFSApi);
     }
     
     
@@ -118,6 +120,8 @@ public class VfsHandler implements IVfsHandler
         }
         openList.clear();
         openDirs.clear();
+        
+        blockRunner.close();
     }
 
     @Override
@@ -144,6 +148,13 @@ public class VfsHandler implements IVfsHandler
     }
 
     @Override
+    public VfsWriteBlockRunner getBlockRunner()
+    {
+        return blockRunner;
+    }
+    
+
+    @Override
     public IVfsFsEntry createFileEntry( String pathStr, int posixMode ) throws IOException, SQLException, PathResolveException, PoolReadOnlyException
     {
         IVfsDir parent = getParent(pathStr);
@@ -151,7 +162,7 @@ public class VfsHandler implements IVfsHandler
             throw new IOException( "No Parent Node fpound for " + pathStr);
         
         RemoteFSElem elem = remoteFSApi.create_fse_node( pathStr, FileSystemElemNode.FT_FILE);
-        IVfsFsEntry entry =  VfsFile.createFile( parent, pathStr, elem, remoteFSApi );
+        IVfsFsEntry entry =  VfsFile.createFile( parent, pathStr, elem, remoteFSApi, blockRunner );
         parent.addChild(entry);
         
         //entryMap.put( pathStr, entry );

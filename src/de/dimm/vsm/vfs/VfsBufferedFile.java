@@ -6,10 +6,8 @@ package de.dimm.vsm.vfs;
 
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
-import de.dimm.vsm.Utilities.CryptTools;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.net.RemoteFSElem;
-import fr.cryptohash.Digest;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -20,59 +18,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
-
-
-
-
-
-
-class VfsBlock
-{
-    long offset;
-    int len;
-    byte[] data;
-    boolean dirtyWrite;
-    int validLen;
-    long lastTS;
-    String hash;
-    
-
-    public VfsBlock( long offset, int len, byte[] data )
-    {
-        this.offset = offset;
-        this.len = len;
-        this.validLen = len;
-        this.data = data;
-        touchTS();
-    }
-
-    public VfsBlock( long offset, int len, int validLen, byte[] data )
-    {
-        this(offset, len, data);        
-        this.validLen = validLen;
-    }
-
-     
-    public void setDirtyWrite( boolean dirtyWrite )
-    {
-        this.dirtyWrite = dirtyWrite;
-    }
-
-    public boolean isDirtyWrite()
-    {
-        return dirtyWrite;
-    }
-
-    boolean isComplete()
-    {
-        return validLen == len;
-    }
-    final void touchTS()
-    {
-        lastTS = System.currentTimeMillis();
-    }
-}
 
 
 
@@ -90,14 +35,15 @@ public class VfsBufferedFile extends VfsFile
     private static final int MAX_BLOCK_LIMIT = 50;
     private static final int MIN_BLOCK_LIMIT = 10;
     
-    // CREATE URLSAFE ENCODE
-    Digest digest = new fr.cryptohash.SHA1();
     
+   
+    VfsWriteBlockRunner blockRunner;
     
-    public VfsBufferedFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi )
+    public VfsBufferedFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi,  VfsWriteBlockRunner blockRunner )
     {
         super( parent, path, elem, remoteFSApi );
         blockMap = new HashMap<>(1);
+        this.blockRunner =  blockRunner;
     }
     
     void workBlockCache()
@@ -112,13 +58,13 @@ public class VfsBufferedFile extends VfsFile
                 @Override
                 public int compare( VfsBlock o1, VfsBlock o2 )
                 {
-                    return (int)(o1.lastTS - o2.lastTS);
+                    return (int)(o1.getLastTS() - o2.getLastTS());
                 }
             });
             
             for (int i = 0; i < list.size(); i++ )
             {
-                long offset = list.get(i).offset;
+                long offset = list.get(i).getOffset();
                 VfsBlock block = blockMap.get(offset);
                 if (!block.isDirtyWrite())
                 {
@@ -147,20 +93,20 @@ public class VfsBufferedFile extends VfsFile
         block.touchTS();
         
         // Block is complete and fits?
-        if (block.validLen == len && block.isComplete())
-            return block.data;
+        if (block.getValidLen() == len && block.isComplete())
+            return block.getData();
 
         // readpos in Block
-        int offsetInBlock = (int)(offset - block.offset);            
+        int offsetInBlock = (int)(offset - block.getOffset());            
         int readLen = len;
         // Calc readable len of data
-        if (offsetInBlock + readLen > block.validLen)
+        if (offsetInBlock + readLen > block.getValidLen())
         {
-            readLen = block.validLen - offsetInBlock;
+            readLen = block.getValidLen() - offsetInBlock;
         }
         // read data
         byte[] data = new byte[readLen];
-        System.arraycopy( block.data, offsetInBlock, data, 0, readLen);
+        System.arraycopy( block.getData(), offsetInBlock, data, 0, readLen);
         return data;
     }
 
@@ -202,39 +148,39 @@ public class VfsBufferedFile extends VfsFile
                 }
             }
 
-            int offsetInBlock = (int)(realOffset - block.offset);   
+            int offsetInBlock = (int)(realOffset - block.getOffset());   
 
             // Schreiben über Block hinaus?
-            if (realLen > block.len - offsetInBlock)
+            if (realLen > block.getLen() - offsetInBlock)
             {
                 // Block ist zu klein?
-                if (block.len < blockSize)
+                if (block.getLen() < blockSize)
                 {
                     // Create new Block on Blockboundary
                     long blockOffset = getBlockOffset(offset);
                     byte[] blockData = new byte[blockSize];
 
                     // Kopiere bestehende Daten hinein
-                    System.arraycopy( block.data, 0, blockData, 0, block.len);
+                    System.arraycopy( block.getData(), 0, blockData, 0, block.getLen());
                     block = new VfsBlock( blockOffset, blockSize, 0, blockData );    
                     blockMap.put( blockOffset, block);
                 }
                 // Korrigiere tatsaechlich moegliche Laenge
-                if (realLen > block.len - offsetInBlock)
+                if (realLen > block.getLen() - offsetInBlock)
                 {
-                    realLen = block.len - offsetInBlock;
+                    realLen = block.getLen() - offsetInBlock;
                 }
             }
 
-            System.arraycopy( data, 0, block.data, offsetInBlock, realLen);
+            System.arraycopy( data, 0, block.getData(), offsetInBlock, realLen);
 
             // Block hat neue Daten
             block.setDirtyWrite( true );
 
             // Neues Blockende prüfen
-            if (block.validLen < offsetInBlock + realLen)
+            if (block.getValidLen() < offsetInBlock + realLen)
             {
-                block.validLen = offsetInBlock + realLen;
+                block.setValidLen( offsetInBlock + realLen );
             }
             block.touchTS();
 
@@ -273,6 +219,11 @@ public class VfsBufferedFile extends VfsFile
         // TODO: cache a la ehCache with blocks
         debug( "Clearing "+ blockMap.size() + " Blocks ");
         blockMap.clear();
+        
+        if (!blockRunner.flushAndWait())
+        {
+            throw new IOException("Fehler beim Übertragen der Daten");
+        }
         
     }
     
@@ -354,7 +305,7 @@ public class VfsBufferedFile extends VfsFile
             @Override
             public int compare( VfsBlock o1, VfsBlock o2 )
             {
-                return (int)(o1.lastTS - o2.lastTS);
+                return (int)(o1.getLastTS() - o2.getLastTS());
             }
         });
         
@@ -362,7 +313,7 @@ public class VfsBufferedFile extends VfsFile
         {
             if (vfsBlock.isDirtyWrite())
             {
-                debug( "Write Block " + vfsBlock.offset + " len " + vfsBlock.validLen);
+                debug( "Write Block " + vfsBlock.getOffset() + " len " + vfsBlock.getValidLen());
                 write_block( handleNo, vfsBlock);
                 vfsBlock.setDirtyWrite(false);
                 touchMTime();
@@ -382,10 +333,10 @@ public class VfsBufferedFile extends VfsFile
             @Override
             public int compare( VfsBlock o1, VfsBlock o2 )
             {
-                long diff = (o1.lastTS - o2.lastTS);
+                long diff = (o1.getLastTS() - o2.getLastTS());
                 if (diff == 0)
                 {
-                    diff = (o1.offset- o2.offset);
+                    diff = (o1.getOffset()- o2.getOffset());
                 }
                 return Long.signum(diff);
             }
@@ -412,7 +363,7 @@ public class VfsBufferedFile extends VfsFile
             {
                 if (!list.get(i).isDirtyWrite())
                 {
-                    long offset = list.get(i).offset;
+                    long offset = list.get(i).getOffset();
                     blockMap.remove(offset);
                 }
             }
@@ -421,17 +372,11 @@ public class VfsBufferedFile extends VfsFile
     
     void write_block(long handleNo, VfsBlock vfsBlock) throws IOException, SQLException, PoolReadOnlyException, PathResolveException
     {
-        // TODO: calc Hashes, send to Server, and if necessary put hashes into blockbuffer for server to fetch.
-        byte[] hash = digest.digest(vfsBlock.data);
-        vfsBlock.hash = CryptTools.encodeUrlsafe(hash);
+        blockRunner.write_block(handleNo, vfsBlock);
         
-        debug( "Write Block " + vfsBlock.offset + " len " + vfsBlock.validLen);   
-        
-        remoteFSApi.writeBlock(handleNo, vfsBlock.hash, vfsBlock.data, vfsBlock.validLen, vfsBlock.offset);
-        
-        if (getSize() < vfsBlock.offset + vfsBlock.validLen)
+        if (getSize() < vfsBlock.getOffset() + vfsBlock.getValidLen())
         {
-            getNode().setDataSize( vfsBlock.offset + vfsBlock.validLen);
+            getNode().setDataSize( vfsBlock.getOffset() + vfsBlock.getValidLen());
             setUpdatedFileSize(true);
         }        
     }

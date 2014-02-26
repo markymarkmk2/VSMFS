@@ -20,6 +20,7 @@ import java.util.List;
 public class VfsFile implements IVfsFile
 {
 
+
     private boolean newFile;
     private boolean streamPath;
     protected String path;
@@ -40,9 +41,10 @@ public class VfsFile implements IVfsFile
         this.remoteFSApi = remoteFSApi;
     }
     
-    public static VfsFile createFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi)
+    
+    public static VfsFile createFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi, VfsWriteBlockRunner blockRunner)
     {
-        VfsFile ret = new VfsBufferedFile( parent, path, elem, remoteFSApi );
+        VfsFile ret = new VfsBufferedFile( parent, path, elem, remoteFSApi, blockRunner );
         ret.setNewFile(true);
         return ret;
 //        return new VfsFile( path, elem, remoteFSApi );

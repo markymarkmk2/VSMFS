@@ -37,6 +37,8 @@ public interface IVfsHandler
     public boolean removeDir( IVfsDir entry ) throws IOException,SQLException, PoolReadOnlyException;
 
     public boolean unlink( IVfsFsEntry entry ) throws IOException,SQLException, PoolReadOnlyException;
+    
+    public VfsWriteBlockRunner getBlockRunner();
 
 //    void addToEntryMap( IVfsFsEntry entry );
 //

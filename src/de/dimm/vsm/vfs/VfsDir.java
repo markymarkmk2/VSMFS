@@ -44,7 +44,7 @@ public class VfsDir extends VfsFile implements IVfsDir
             if (remoteFSElem.isDirectory())
                 children.add( new VfsDir( this, parentPath + remoteFSElem.getName(), remoteFSElem, remoteFSApi, vfsHandler) );
             else
-                children.add(  VfsFile.createFile( this, parentPath + remoteFSElem.getName(), remoteFSElem, remoteFSApi) );
+                children.add(  VfsFile.createFile( this, parentPath + remoteFSElem.getName(), remoteFSElem, remoteFSApi, vfsHandler.getBlockRunner()) );
                 
         }
 //        for (IVfsFsEntry entry : children)

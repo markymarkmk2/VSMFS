@@ -1177,7 +1177,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
     }
     private IVfsFsEntry resolveNode( String winpath ) throws IOException
     {
-        String path = WinFileUtilities.win_to_sys_path(winpath);
+        String path = winpath;
         //log.debug("Resolved path " + winpath + " to " + path);
         
         IVfsFsEntry entry;
@@ -1193,7 +1193,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
     }
     private OpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws IOException
     {
-        String path = WinFileUtilities.win_to_sys_path(winpath);
+        String path = winpath;
          try
         {
             OpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);

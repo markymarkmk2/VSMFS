@@ -72,9 +72,22 @@ public class FSServerConnector
     public static final String path = "fs";
     public static final String keyStore = "J:\\Develop\\VSM\\Eval\\ProjectEval\\vsmkeystore2.jks";
     public static final String keyPwd = "123456";
+    private static int connTimeout = 5000;
+    private static int txTimeout = 2*60*1000;
 
     List<ServerTicket> serverList;
 
+    public static void setConnTimeout( int connTimeout )
+    {
+        FSServerConnector.connTimeout = connTimeout;
+    }
+
+    public static void setTxTimeout( int txTimeout )
+    {
+        FSServerConnector.txTimeout = txTimeout;
+    }
+
+    
     public FSServerConnector()
     {
         serverList = new ArrayList<ServerTicket>();
@@ -157,7 +170,7 @@ public class FSServerConnector
         StoragePoolHandlerApiEntry api = new StoragePoolHandlerApiEntry();
         try
         {
-            api.factory = new RemoteCallFactory(adress, port, path, ssl, tcp);
+            api.factory = new RemoteCallFactory(adress, port, path, ssl, tcp, connTimeout, txTimeout);
 
             api.api = (StoragePoolHandlerInterface) api.factory.create(StoragePoolHandlerInterface.class);
         }
@@ -175,7 +188,7 @@ public class FSServerConnector
 
         try
         {
-            api.factory = new RemoteCallFactory(adress, port, path, ssl, tcp);
+            api.factory = new RemoteCallFactory(adress, port, path, ssl, tcp, connTimeout, txTimeout);
 
             api.api = (FSENodeInterface) api.factory.create(FSENodeInterface.class);
         }

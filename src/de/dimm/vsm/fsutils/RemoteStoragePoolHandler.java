@@ -795,4 +795,43 @@ public class RemoteStoragePoolHandler implements RemoteFSApi
     {
         return poolWrapper;
     }
+
+    @Override
+    public void setAttribute( RemoteFSElem elem, String string, Integer valueOf ) throws IOException, SQLException, PoolReadOnlyException {
+        getApi().set_attribute( getWrapper(), elem, string, valueOf);
+    }
+
+    @Override
+    public String readSymlink( RemoteFSElem elem ) {
+        return getApi().read_symlink( getWrapper(), elem);
+    }
+
+    @Override
+    public void createSymlink( RemoteFSElem elem, String to ) throws IOException, PoolReadOnlyException {
+         getApi().create_symlink( getWrapper(), elem, to );
+    }
+     @Override
+    public String getXattribute( RemoteFSElem elem, String name ) throws SQLException
+    {
+        return getApi().get_xattribute( getWrapper(), elem, name);
+    }
+
+    @Override
+    public List<String> listXattributes(RemoteFSElem elem )
+    {
+        return getApi().list_xattributes( getWrapper(), elem);
+    }
+
+    @Override
+    public void addXattribute( RemoteFSElem elem, String name, String valStr )
+    {
+        getApi().add_xattribute( getWrapper(), elem, name, valStr );
+    }
+
+    @Override
+    public void updateElem(RemoteFSElem elem, long handleNo )  throws IOException, SQLException, PoolReadOnlyException
+    {
+        getApi().updateAttributes(getWrapper(), handleNo, elem);
+    }
+
 }

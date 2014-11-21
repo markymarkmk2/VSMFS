@@ -6,8 +6,8 @@ package de.dimm.vsm.vfs;
 
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
-import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.net.interfaces.RemoteFSApi;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -17,6 +17,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 
 
@@ -30,16 +32,16 @@ public class VfsBufferedFile extends VfsFile
 {
     Map<Long,VfsBlock> blockMap;
     int blockSize = 1024*1024;
-    private static final int MAX_DIRTY_BLOCKS = 20;
+    private static final int MAX_DIRTY_BLOCKS = 30;
     
     private static final int MAX_BLOCK_LIMIT = 50;
     private static final int MIN_BLOCK_LIMIT = 10;
     
-    
    
-    VfsWriteBlockRunner blockRunner;
+   
+    IWriteBlockRunner blockRunner;
     
-    public VfsBufferedFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi,  VfsWriteBlockRunner blockRunner )
+    public VfsBufferedFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteFSApi remoteFSApi,  IWriteBlockRunner blockRunner )
     {
         super( parent, path, elem, remoteFSApi );
         blockMap = new HashMap<>(1);
@@ -68,7 +70,7 @@ public class VfsBufferedFile extends VfsFile
                 VfsBlock block = blockMap.get(offset);
                 if (!block.isDirtyWrite())
                 {
-                    blockMap.remove(offset);                
+                    blockMap.remove(offset);                                 
                     if (blockMap.size() < MIN_BLOCK_LIMIT)
                         break;
                 }
@@ -132,7 +134,8 @@ public class VfsBufferedFile extends VfsFile
                     }
                     catch (IOException | SQLException iOException)
                     {
-                        debug( "Keine Daten bei Blockadresse " + offset + ": " + iOException);
+                        error( "Keine Daten bei Blockadresse " + offset + ": " + iOException);
+                        throw iOException; 
                     }                    
                 }
 
@@ -142,8 +145,9 @@ public class VfsBufferedFile extends VfsFile
                     // Create new Block on Blockboundary
                     long blockOffset = getBlockOffset(realOffset);
 
-                    byte[] blockData = new byte[blockSize];
-                    block = new VfsBlock( blockOffset, blockSize, 0, blockData );    
+                    block = blockRunner.getNewFullBlock(blockOffset, blockSize, 0);
+//                    byte[] blockData = new byte[blockSize];
+//                    block = new VfsBlock( blockOffset, blockSize, 0, blockData );    
                     blockMap.put( blockOffset, block);
                 }
             }
@@ -162,7 +166,8 @@ public class VfsBufferedFile extends VfsFile
 
                     // Kopiere bestehende Daten hinein
                     System.arraycopy( block.getData(), 0, blockData, 0, block.getLen());
-                    block = new VfsBlock( blockOffset, blockSize, 0, blockData );    
+                    //block = new VfsBlock( blockOffset, blockSize, 0, blockData );  
+                    block = blockRunner.getNewFullBlock(blockOffset, blockSize, 0, blockData);
                     blockMap.put( blockOffset, block);
                 }
                 // Korrigiere tatsaechlich moegliche Laenge
@@ -172,7 +177,7 @@ public class VfsBufferedFile extends VfsFile
                 }
             }
 
-            System.arraycopy( data, 0, block.getData(), offsetInBlock, realLen);
+            System.arraycopy( data, writtenLen, block.getData(), offsetInBlock, realLen);
 
             // Block hat neue Daten
             block.setDirtyWrite( true );
@@ -203,28 +208,39 @@ public class VfsBufferedFile extends VfsFile
         {
             // Flush pending writes
             writeUnwrittenBlocks(handleNo);
-            // Check wether Filesize has changed
-            if (isUpdatedFileSize()) 
-            {
-                debug( "Korrigiere neue Länge von " + getNode().getName() + " -> " + getNode().getDataSize());
-                truncate(handleNo, getNode().getDataSize());
-            }
+            
         }
         catch (PoolReadOnlyException | SQLException | PathResolveException ex)
         {
             throw new IOException( "Fehler bei close: " + ex.getMessage(), ex);
         }
-        super.close(handleNo);
-        
-        // TODO: cache a la ehCache with blocks
-        debug( "Clearing "+ blockMap.size() + " Blocks ");
-        blockMap.clear();
-        
-        if (!blockRunner.flushAndWait())
+
+        try
         {
-            throw new IOException("Fehler beim Übertragen der Daten");
+            if (!blockRunner.flushAndWait())
+            {
+                throw new IOException("Fehler beim Übertragen der Daten");
+            }
         }
-        
+        finally
+        {
+            // TODO: cache a la ehCache with blocks
+            debug( "Clearing "+ blockMap.size() + " Blocks ");
+            blockMap.clear();
+            
+            // Check wether Filesize has changed
+            if (isUpdatedFileSize()) 
+            {
+                debug( "Korrigiere neue Länge von " + getNode().getName() + " -> " + getNode().getDataSize());
+                try {
+                    truncate(handleNo, getNode().getDataSize());
+                }
+                catch (SQLException | PoolReadOnlyException ex) {
+                    throw new IOException("Fehler beim Setzen der neuen Größe von " + getNode().toString());
+                }
+            }
+            super.close(handleNo);
+        }                
     }
     
     @Override
@@ -255,7 +271,8 @@ public class VfsBufferedFile extends VfsFile
         debug( "Read Block " + blockOffset + " len " + blockLen);
         byte[] data =  super.read( handleNo, blockOffset, blockLen );
 
-        VfsBlock block = new VfsBlock( blockOffset, data.length, data);
+        VfsBlock block = blockRunner.getNewFullBlock(blockOffset, data.length, data);
+        //VfsBlock block = new VfsBlock( blockOffset, data.length, data);
         blockMap.put( blockOffset, block);
         return block;
     }
@@ -305,7 +322,12 @@ public class VfsBufferedFile extends VfsFile
             @Override
             public int compare( VfsBlock o1, VfsBlock o2 )
             {
-                return (int)(o1.getLastTS() - o2.getLastTS());
+                long diff = (o1.getLastTS() - o2.getLastTS());
+                if (diff == 0)
+                {
+                    diff = (o1.getOffset()- o2.getOffset());
+                }
+                return Long.signum(diff);
             }
         });
         
@@ -313,7 +335,7 @@ public class VfsBufferedFile extends VfsFile
         {
             if (vfsBlock.isDirtyWrite())
             {
-                debug( "Write Block " + vfsBlock.getOffset() + " len " + vfsBlock.getValidLen());
+                debug( "Write Block " + vfsBlock.toString());
                 write_block( handleNo, vfsBlock);
                 vfsBlock.setDirtyWrite(false);
                 touchMTime();
@@ -356,15 +378,15 @@ public class VfsBufferedFile extends VfsFile
                     break;
             }
         }
-       
-        if (blockMap.size() > MAX_BLOCK_LIMIT)
+        
+        if (list.size() > MAX_BLOCK_LIMIT)
         {
             for (int i = 0; i < list.size() - MIN_BLOCK_LIMIT; i++ )
             {
                 if (!list.get(i).isDirtyWrite())
                 {
                     long offset = list.get(i).getOffset();
-                    blockMap.remove(offset);
+                    blockMap.remove(offset);                    
                 }
             }
         }       

@@ -54,7 +54,7 @@ public interface IVfsFsEntry
 
     public String readSymlink();
 
-    public void createSymlink( String to ) throws IOException, PoolReadOnlyException;
+    public void createSymlink( String to ) throws IOException, SQLException, PoolReadOnlyException;
     public void truncate( long handleNo, long size ) throws IOException, SQLException, PoolReadOnlyException;
     public void setLastAccessed( long handleNo, long l ) throws IOException, SQLException, PoolReadOnlyException;
     public void setLastModified( long handleNo, long l ) throws IOException, SQLException, PoolReadOnlyException;

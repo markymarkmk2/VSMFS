@@ -4,8 +4,8 @@
  */
 package de.dimm.vsm.vfs;
 
-import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.net.interfaces.RemoteFSApi;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -20,7 +20,7 @@ public class VfsDir extends VfsFile implements IVfsDir
     List<IVfsFsEntry>children;
     IVfsHandler vfsHandler;
 
-    public VfsDir( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi, IVfsHandler vfsHandler )
+    public VfsDir( IVfsDir parent, String path, RemoteFSElem elem, RemoteFSApi remoteFSApi, IVfsHandler vfsHandler )
     {
         super( parent, path, elem, remoteFSApi );
         this.vfsHandler = vfsHandler;

@@ -3,7 +3,6 @@ package de.dimm.vsm.fuse;
 import de.dimm.vsm.Exceptions.FuseException;
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
-import de.dimm.vsm.Utilities.WinFileUtilities;
 import de.dimm.vsm.fsutils.IVSMFS;
 import de.dimm.vsm.fsutils.MacShutdownHook;
 import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
@@ -12,7 +11,7 @@ import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.vfs.IVfsDir;
 import de.dimm.vsm.vfs.IVfsFsEntry;
 import de.dimm.vsm.vfs.IVfsHandler;
-import de.dimm.vsm.vfs.OpenVfsFsEntry;
+import de.dimm.vsm.vfs.IOpenVfsFsEntry;
 import de.dimm.vsm.vfs.VfsHandler;
 import java.io.File;
 import java.io.IOException;
@@ -310,7 +309,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
         
         try
         {
-            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fh.fh);
+            IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fh.fh);
             
             entry.flush();
         }
@@ -332,7 +331,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
         
         try
         {
-            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fh.fh);
+            IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fh.fh);
             
             entry.flush();           
         }
@@ -486,7 +485,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
                 }
             }
         }
-        catch (Exception e)
+        catch (IOException | SQLException | FuseException e)
         {
             log.error("unable to getdir " + path, e);
             return -1;
@@ -527,7 +526,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
                 }
             }
         }
-        catch (Exception e)
+        catch (IOException | SQLException e)
         {
             log.error("unable to readdir " + path, e);
             return -1;
@@ -663,7 +662,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
         log.debug("Reading " + buf.capacity() + " byte from handle " + fi.fh + " File " + pathStr );
         try
         {
-            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);            
+            IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);            
             byte[] b = entry.read( offset, buf.capacity());                    
             buf.put(b);                
             return b.length;
@@ -711,7 +710,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
         traceEnter("release", path);
         
         // log.info("closing " + path + " with flags " + flags);
-        OpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);                        
+        IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);                        
         try
         {
             vfsHandler.closeEntry( entry );
@@ -827,7 +826,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
     {
         //traceEnter("access", path);
         String pathStr = resolveBuffer(path);   
-        IVfsFsEntry entry = null;
+        IVfsFsEntry entry;
         try
         {
             entry = resolveNode(pathStr);
@@ -866,7 +865,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
             }
             fentry.createSymlink(t);
         }
-        catch (Exception e)
+        catch (IOException | SQLException | FuseException | PoolReadOnlyException e)
         {
 
             log.error("error linking " + from + " to " + to, e);
@@ -889,7 +888,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
             IVfsFsEntry entry = resolveNode(pathStr);
             entry.truncate(-1, size);                
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException e)
         {
             log.error("unable to truncate file " + path, e);
             return -FUSEErrorValues.EACCES;
@@ -922,7 +921,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
                 return -FUSEErrorValues.EACCES;
             }
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException e)
         {
             log.error("unable to file file " + pathStr, e);
             return -FUSEErrorValues.EACCES;
@@ -944,7 +943,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
             entry.setLastAccessed(-1, time.actime * 1000L);
             entry.setLastModified(-1, time.modtime * 1000L);
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException e)
         {
             log.error("unable to utime file " + path, e);
             return -FUSEErrorValues.EACCES;
@@ -968,7 +967,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
             entry.setLastAccessed(-1, accessTime.toMillis());
             entry.setLastModified(-1, modificationTime.toMillis());
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException e)
         {
             log.error("unable to utime file " + path, e);
             return -FUSEErrorValues.EACCES;
@@ -992,7 +991,7 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
          * log.info("writing data to  " +path + " at " + offset +
          * " and length of " + buf.capacity());
          */
-        OpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);                        
+        IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle( fi.fh);                        
         byte[] b = new byte[buf.capacity()];
         buf.get(b);
         try
@@ -1191,12 +1190,12 @@ public class VfsMacFuseVSMFS extends MacFUSEFileSystemAdapter/*//FUSEFileSystemA
         }
         return entry;
     }
-    private OpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws IOException
+    private IOpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws IOException
     {
         String path = winpath;
          try
         {
-            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);
+            IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);
             if (entry == null) {
                 throw new IOException("Node not open " + path);
 //                entry = vfsHandler.getEntry( path );

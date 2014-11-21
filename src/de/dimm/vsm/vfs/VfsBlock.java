@@ -37,11 +37,48 @@ public class VfsBlock
     @Override
     public String toString()
     {
-        return "L: " + len + " O: " + offset + " H: " + hash; 
+        return "N: " + Long.toString(offset/(1024*1024)) + " L: " + len + " O: " + offset + " H: " + hash; 
     }
     
-
-     
+    public void setOffsetLen(long offset, int len)
+    {
+        this.offset = offset;
+        this.len = len;
+        this.validLen = len;
+        hash = null;
+        touchTS();
+        
+    }
+    public void setOffsetLenValidLen(long offset, int len, int validLen)
+    {
+        this.offset = offset;
+        this.len = len;    
+        this.validLen = validLen;
+        hash = null;
+        touchTS();
+    }
+         
+    public void setOffsetLenData(long offset, int len, byte[]data)
+    {
+        this.offset = offset;
+        this.len = len;    
+        this.validLen = len;
+        this.data = data;
+        hash = null;
+        touchTS();
+    }
+         
+    public void setOffsetLenValidLenData(long offset, int len, int valid_len, byte[]data)
+    {
+        this.offset = offset;
+        this.len = len;    
+        this.validLen = valid_len;
+        this.data = data;
+        hash = null;
+        touchTS();
+    }
+         
+   
     public void setDirtyWrite( boolean dirtyWrite )
     {
         this.dirtyWrite = dirtyWrite;

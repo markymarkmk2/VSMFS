@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 public class VirtualFSFile implements IVirtualFSFile
 {
     
-    int blocksize = 1024*1024; // TODO: Should come from server
+    static final int blocksize = 1024*1024; // TODO: Should come from server
     // 
     public static final int MAX_WRITE_BLOCKS = 250;
     public static final int ASYNC_THRESHOLD_PERCENT = 10;

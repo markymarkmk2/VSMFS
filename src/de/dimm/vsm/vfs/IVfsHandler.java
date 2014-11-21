@@ -20,7 +20,7 @@ public interface IVfsHandler
     IVfsFsEntry getParent( String path) throws IOException, SQLException;
 
     public void closeAll();
-    public void closeEntry(OpenVfsFsEntry entry );
+    public void closeEntry(IOpenVfsFsEntry entry );
 
     public IVfsFsEntry createFileEntry( String pathStr, int posixMode )  throws IOException, SQLException, PathResolveException, PoolReadOnlyException;
 
@@ -30,7 +30,7 @@ public interface IVfsHandler
 
     public long openEntry( IVfsFsEntry entry  ) throws IOException, SQLException, PoolReadOnlyException, PathResolveException;
 
-    public OpenVfsFsEntry getEntryByHandle( long fh );
+    public IOpenVfsFsEntry getEntryByHandle( long fh );
 
     public void moveNode( String f, String t ) throws IOException,SQLException, PoolReadOnlyException, PathResolveException;
 
@@ -38,7 +38,10 @@ public interface IVfsHandler
 
     public boolean unlink( IVfsFsEntry entry ) throws IOException,SQLException, PoolReadOnlyException;
     
-    public VfsWriteBlockRunner getBlockRunner();
+    public IWriteBlockRunner getBlockRunner();
+    
+     public String printStatistics();
+    
 
 //    void addToEntryMap( IVfsFsEntry entry );
 //

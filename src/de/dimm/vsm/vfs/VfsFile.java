@@ -7,8 +7,8 @@ package de.dimm.vsm.vfs;
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.VSMFSLogger;
-import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.net.interfaces.RemoteFSApi;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
@@ -19,21 +19,17 @@ import java.util.List;
  */
 public class VfsFile implements IVfsFile
 {
-
-
     private boolean newFile;
     private boolean streamPath;
     protected String path;
     
     protected RemoteFSElem elem;
-    protected RemoteStoragePoolHandler remoteFSApi;
+    protected RemoteFSApi remoteFSApi;
     protected boolean updatedFileSize;
-    
-    
 
     IVfsDir parent;
     
-    protected VfsFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi )
+    protected VfsFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteFSApi remoteFSApi )
     {
         this.parent = parent;
         this.path = path;
@@ -42,7 +38,7 @@ public class VfsFile implements IVfsFile
     }
     
     
-    public static VfsFile createFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteStoragePoolHandler remoteFSApi, VfsWriteBlockRunner blockRunner)
+    public static VfsFile createFile( IVfsDir parent, String path, RemoteFSElem elem, RemoteFSApi remoteFSApi, IWriteBlockRunner blockRunner)
     {
         VfsFile ret = new VfsBufferedFile( parent, path, elem, remoteFSApi, blockRunner );
         ret.setNewFile(true);
@@ -206,19 +202,19 @@ public class VfsFile implements IVfsFile
     @Override
     public void setAttribute( String string, Integer valueOf ) throws IOException, SQLException, PoolReadOnlyException
     {
-        remoteFSApi.getApi().set_attribute( remoteFSApi.getWrapper(), elem, string, valueOf);
+        remoteFSApi.setAttribute( elem, string, valueOf);
     }
 
     @Override
     public String readSymlink()
     {
-        return remoteFSApi.getApi().read_symlink( remoteFSApi.getWrapper(), elem);
+        return remoteFSApi.readSymlink(elem);
     }
 
     @Override
-    public void createSymlink( String to ) throws IOException, PoolReadOnlyException
+    public void createSymlink( String to ) throws IOException, SQLException, PoolReadOnlyException
     {
-        remoteFSApi.getApi().create_symlink( remoteFSApi.getWrapper(), elem, to );
+        remoteFSApi.createSymlink(elem, to);
     }
 
     @Override
@@ -258,19 +254,19 @@ public class VfsFile implements IVfsFile
     @Override
     public String getXattribute( String name ) throws SQLException
     {
-        return remoteFSApi.getApi().get_xattribute( remoteFSApi.getWrapper(), elem, name);
+        return remoteFSApi.getXattribute(elem, name);
     }
 
     @Override
     public List<String> listXattributes()
     {
-        return remoteFSApi.getApi().list_xattributes( remoteFSApi.getWrapper(), elem);
+        return remoteFSApi.listXattributes(elem);
     }
 
     @Override
     public void addXattribute( String name, String valStr )
     {
-        remoteFSApi.getApi().add_xattribute( remoteFSApi.getWrapper(), elem, name, valStr );
+        remoteFSApi.addXattribute(elem, name, valStr);
     }
 
     @Override
@@ -326,9 +322,9 @@ public class VfsFile implements IVfsFile
         // TODO
     }
 
-    private void updateElem(long handleNo )  throws IOException, SQLException, PoolReadOnlyException
+    public void updateElem(long handleNo )  throws IOException, SQLException, PoolReadOnlyException
     {
-        remoteFSApi.getApi().updateAttributes(remoteFSApi.getWrapper(), handleNo, elem);
+        remoteFSApi.updateElem(elem, handleNo);
     }
 
  
@@ -336,10 +332,8 @@ public class VfsFile implements IVfsFile
     @Override
     public void close(long handleNo ) throws IOException
     {
-        //checkValidHandle();
-        
-        remoteFSApi.close( handleNo );
-        handleNo = -1;
+        //checkValidHandle();        
+        remoteFSApi.close( handleNo );      
     }
 
     @Override

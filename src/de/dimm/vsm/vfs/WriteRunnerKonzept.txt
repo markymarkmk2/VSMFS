@@ -1,0 +1,12 @@
+
+HashCalculator with Digest and hashreadySema
+
+BlockingQueue mit hashCalculator
+
+Add New Hash wit VfsBlock:
+    Get HashCalculator from Queue
+    Set VfsBlock
+    Reset hashReady Sema
+    Put to Fixed Len WriteQueue
+    Put to ExecutorSevice FixedPoolThread (8)
+

@@ -13,7 +13,7 @@ import de.dimm.vsm.net.RemoteFSElem;
 import de.dimm.vsm.vfs.IVfsDir;
 import de.dimm.vsm.vfs.IVfsFsEntry;
 import de.dimm.vsm.vfs.IVfsHandler;
-import de.dimm.vsm.vfs.OpenVfsFsEntry;
+import de.dimm.vsm.vfs.IOpenVfsFsEntry;
 import de.dimm.vsm.vfs.VfsHandler;
 import java.sql.SQLException;
 import net.decasdev.dokan.DokanOptions;
@@ -28,12 +28,11 @@ import static net.decasdev.dokan.FileAttribute.FILE_ATTRIBUTE_NORMAL;
 import static net.decasdev.dokan.WinError.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 import net.decasdev.dokan.ByHandleFileInformation;
 import net.decasdev.dokan.Dokan;
 import net.decasdev.dokan.DokanDiskFreeSpace;
@@ -81,7 +80,19 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 
     private boolean useVirtualFS = false;
     
+    private static boolean verbose = false;
+    
 
+    public String printStatistics()
+    {
+        StringBuilder sb = new StringBuilder(vfsHandler.printStatistics());
+        return sb.toString();
+    }
+
+    public static void setVerbose( boolean verbose ) {
+        VfsDokanVSMFS.verbose = verbose;
+    }
+    
 
     public VfsDokanVSMFS( RemoteStoragePoolHandler api,  String drive, Logger log ) throws SQLException
     {
@@ -145,6 +156,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         {
             Runtime.getRuntime().addShutdownHook(hook);            
         }
+        dirCache.clear();
 
         return result == 0 ? true : false;
         
@@ -152,6 +164,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 
     public static boolean unmount( String drive )
     {
+        
         return Dokan.removeMountPoint(drive);
     }
     
@@ -162,6 +175,8 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         remoteFSApi.disconnect();
         vfsHandler.closeAll();
 
+        dirCache.clear();
+        
         log("[unmount] removeMountPoint " + drive);
         boolean ret = Dokan.removeMountPoint(drive);
 
@@ -368,7 +383,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         if (arg1.handle == 0)
             return;
         
-        OpenVfsFsEntry f = resolveNodeOpenedFile(winPath, arg1);
+        IOpenVfsFsEntry f = resolveNodeOpenedFile(winPath, arg1);
         vfsHandler.closeEntry( f );
         
         if (f.isDeleteOnClose())
@@ -400,7 +415,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onReadFile] " + buf.capacity() + " at " + offset + " from " + fileName +  " " + arg3.toString());        
         
-        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
+        IOpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
         try
         {            
             // Catch empty read
@@ -443,7 +458,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         
         byte[] b = new byte[buf.capacity()];
         buf.get(b);
-        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
+        IOpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg3);
 
         try
         {            
@@ -464,7 +479,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     {
         log("[onSetEndOfFile] len " + length + " " + fileName  + " " + arg2.toString());
        
-        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg2);
+        IOpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg2);
         try
         {
             entry.truncate(length);            
@@ -480,12 +495,13 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     public void onFlushFileBuffers( String fileName, DokanFileInfo arg1 )
             throws DokanOperationException
     {                
-        OpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg1);
+        log("[onFlushFileBuffers] " + fileName  + " " + arg1.toString());
+        IOpenVfsFsEntry entry = resolveNodeOpenedFile(fileName, arg1);
         try
         {
             entry.flush();            
         }
-        catch (Exception e)
+        catch (IOException | SQLException | PoolReadOnlyException | PathResolveException e)
         {
             log.error("Unable to flush " + fileName, e );
             throw new DokanOperationException(ERROR_WRITE_FAULT);
@@ -511,8 +527,9 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             IVfsFsEntry entry = dirListCacheLookUp(fileName);
             if (entry == null)
             {
-                OpenVfsFsEntry oentry = resolveNodeOpenedFile( fileName, arg1);
+                IOpenVfsFsEntry oentry = resolveNodeOpenedFile( fileName, arg1);
                 entry = oentry.getEntry();
+                addDirListCache(fileName, Arrays.asList(entry));
             }
           
             long atime = FileTime.toWinFileTime( entry.getAtimeMs() );
@@ -542,7 +559,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         if (arg1.handle == 0)
             return;
         
-        //OpenVfsFsEntry oentry = resolveNodeOpenedFile(winPath, arg1);
+        //IOpenVfsFsEntry oentry = resolveNodeOpenedFile(winPath, arg1);
         
         try
         {
@@ -636,12 +653,10 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         log("[onFindFiles] " + pathName  + " " + arg1.toString());                        
         IVfsFsEntry entry = resolveNodeDirMustExist( pathName);        
         try
-        {
-            Win32FindData[] cache_files;
-
+        {            
             IVfsDir dir = (IVfsDir)entry;  
             List<IVfsFsEntry> list;
-            DirListCacheEntry dlce = dirCache.get(pathName);
+            DirListCacheEntry dlce = null; //dirCache.get(pathName);
             if (dlce != null && !dlce.isExpired())
             {
                 return dlce.getWdata();
@@ -698,9 +713,8 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
                 cf.getDataSize(), 0, 0, "..", "..");
                 cacheFileList.add(d);
             }
-            cache_files = cacheFileList.toArray(new Win32FindData[0]);
-            dlce.setWdata(cache_files);
-            
+            Win32FindData[] cache_files = cacheFileList.toArray(new Win32FindData[0]);
+            dlce.setWdata(cache_files);            
             return cache_files;
         }
         catch (IOException | SQLException e)
@@ -740,7 +754,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
             log("[onSetFileTime] skipped");
             return;
         }
-        OpenVfsFsEntry entry =  resolveNodeOpenedFile( fileName, arg4);
+        IOpenVfsFsEntry entry =  resolveNodeOpenedFile( fileName, arg4);
         
         try
         {            
@@ -757,7 +771,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     public void onDeleteFile( String fileName, DokanFileInfo arg1 ) throws DokanOperationException
     {
         log("[onDeleteFile] " + fileName);
-        OpenVfsFsEntry oentry = resolveNodeOpenedFile(fileName, arg1);
+        IOpenVfsFsEntry oentry = resolveNodeOpenedFile(fileName, arg1);
          
 //        IVfsFsEntry entry =  resolveNodeFileMustExist( fileName );
         // You should not delete file on DeleteFile or DeleteDirectory.
@@ -799,7 +813,7 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
 	// FileInfo->DeleteOnClose set TRUE and you have to delete the
 	// file in Close.      
         
-        OpenVfsFsEntry oentry = resolveNodeOpenedFile(path, arg1);
+        IOpenVfsFsEntry oentry = resolveNodeOpenedFile(path, arg1);
 
         try
         {
@@ -908,12 +922,12 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
         }
         return entry;
     }
-    private OpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws DokanOperationException
+    private IOpenVfsFsEntry resolveNodeOpenedFile( String winpath, DokanFileInfo arg1) throws DokanOperationException
     {
         String path = WinFileUtilities.win_to_sys_path(winpath);
          try
         {
-            OpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);
+            IOpenVfsFsEntry entry = vfsHandler.getEntryByHandle(arg1.handle);
             if (entry == null) {
                 throw new IOException("Node not open " + path);
 //                entry = vfsHandler.getEntry( path );
@@ -955,7 +969,8 @@ public class VfsDokanVSMFS implements DokanOperations, IVSMFS
     private void log( String string )
     {
         //logs( string);
-         log.debug(string);
+         if (verbose)
+             log.debug(string);
     }
     private void log( String string, Exception e )
     {

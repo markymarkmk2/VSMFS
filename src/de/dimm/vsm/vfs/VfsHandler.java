@@ -7,8 +7,8 @@ package de.dimm.vsm.vfs;
 import de.dimm.vsm.Exceptions.PathResolveException;
 import de.dimm.vsm.Exceptions.PoolReadOnlyException;
 import de.dimm.vsm.VSMFSLogger;
-import de.dimm.vsm.fsutils.RemoteStoragePoolHandler;
 import de.dimm.vsm.net.RemoteFSElem;
+import de.dimm.vsm.net.interfaces.RemoteFSApi;
 import de.dimm.vsm.records.FileSystemElemNode;
 import java.io.IOException;
 import java.sql.SQLException;
@@ -18,16 +18,16 @@ import java.util.List;
 
 public class VfsHandler implements IVfsHandler
 {
-    RemoteStoragePoolHandler remoteFSApi;
+    RemoteFSApi remoteFSApi;
     IVfsDir rootDir;
     private static final long DIR_HANDLE_OFFSET = 0x40000000;
     
     //Map<String,IVfsFsEntry> entryMap;
-    List<OpenVfsFsEntry> openList;
-    List<OpenVfsFsEntry> openDirs;
-    VfsWriteBlockRunner blockRunner;
+    List<IOpenVfsFsEntry> openList;
+    List<IOpenVfsFsEntry> openDirs;
+    IWriteBlockRunner blockRunner;
 
-    public VfsHandler( RemoteStoragePoolHandler remoteFSApi) throws SQLException
+    public VfsHandler( RemoteFSApi remoteFSApi) throws SQLException
     {
         this.remoteFSApi = remoteFSApi;
         RemoteFSElem elem = remoteFSApi.resolve_node( "/");
@@ -107,7 +107,7 @@ public class VfsHandler implements IVfsHandler
     @Override
     public void closeAll()
     {
-        for (OpenVfsFsEntry entry : openList)
+        for (IOpenVfsFsEntry entry : openList)
         {
             try
             {
@@ -125,7 +125,7 @@ public class VfsHandler implements IVfsHandler
     }
 
     @Override
-    public void closeEntry(OpenVfsFsEntry entry)
+    public void closeEntry(IOpenVfsFsEntry entry)
     {
         if (entry.getEntry().isFile()) 
         {
@@ -148,7 +148,7 @@ public class VfsHandler implements IVfsHandler
     }
 
     @Override
-    public VfsWriteBlockRunner getBlockRunner()
+    public IWriteBlockRunner getBlockRunner()
     {
         return blockRunner;
     }
@@ -225,12 +225,12 @@ public class VfsHandler implements IVfsHandler
     }
 
     @Override
-    public OpenVfsFsEntry getEntryByHandle( long fh )
+    public IOpenVfsFsEntry getEntryByHandle( long fh )
     {
         logFileEntries();
         if (fh >= DIR_HANDLE_OFFSET)
         {
-            for (OpenVfsFsEntry entry : openDirs)
+            for (IOpenVfsFsEntry entry : openDirs)
             {
                 if (entry.getHandleNo() == fh)
                 //if (entry.getGUID() == fh)
@@ -239,7 +239,7 @@ public class VfsHandler implements IVfsHandler
         }
         else
         {
-            for (OpenVfsFsEntry entry : openList)
+            for (IOpenVfsFsEntry entry : openList)
             {
                 if (entry.getHandleNo() == fh)
 //                if (entry.getGUID() == fh)
@@ -340,12 +340,23 @@ public class VfsHandler implements IVfsHandler
         if (lastOpenListSize != openList.size())
         {
             VSMFSLogger.getLog().debug("open Files: " + openList.size());
-            for (OpenVfsFsEntry entry : openList)
+            for (IOpenVfsFsEntry entry : openList)
             {
                 VSMFSLogger.getLog().debug("Entry " + entry.getHandleNo() + ": " + entry.getEntry().toString());
             }
             lastOpenListSize = openList.size();
         }
+    }
+    
+    @Override
+    public String printStatistics()
+    {
+        StringBuilder sb = new StringBuilder( this.blockRunner.printStatistics() );
+        sb.append("\n  OpenFiles: ");
+        sb.append(openList.size());
+        sb.append("  OpenDirs : ");
+        sb.append(openDirs.size());
+        return sb.toString();
     }
 
     
